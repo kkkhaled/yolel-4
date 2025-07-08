@@ -2,16 +2,16 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as dotenv from 'dotenv';
 import * as admin from 'firebase-admin';
-import * as serviceAccount from './yolel-1713362452136-firebase-adminsdk-gxb0h-e070f6a24e.json';
+// import * as serviceAccount from './yolel-1713362452136-firebase-adminsdk-gxb0h-e070f6a24e.json';
 import {
   ExpressAdapter,
   NestExpressApplication,
 } from '@nestjs/platform-express';
 
 async function bootstrap() {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-  });
+  // admin.initializeApp({
+  //   credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+  // });
   dotenv.config();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
