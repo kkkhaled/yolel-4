@@ -182,7 +182,14 @@ export class VotesService {
     }
   }
 
-  async getAllVotes(userId: string, page: number = 1, pageSize: number = 20) {
+  async getAllVotes(
+    userId: string,
+    page: number = 1,
+    pageSize: number = 20,
+    gender?: string,
+    ageType?: string,
+    userPoints?: number,
+  ) {
     const skip = (page - 1) * pageSize;
 
     try {
@@ -191,9 +198,27 @@ export class VotesService {
         throw new Error('User not found');
       }
 
-      const query: FilterQuery<Vote> = {
+      const blockedUsers = user.blockedUsers || [];
+
+      let query: FilterQuery<Vote> = {
         interactedUsers: { $nin: [userId] },
       };
+
+      if (gender) {
+        query = {
+          ...query,
+          gender: gender,
+        };
+      }
+
+      if (ageType) {
+        query = {
+          ...query,
+          ageType: ageType,
+        };
+      }
+
+      console.log(query);
 
       const totalItems = await this.voteModel.countDocuments(query);
       const totalPages = Math.ceil(totalItems / pageSize);
@@ -210,9 +235,25 @@ export class VotesService {
           path: 'imageTwo',
           select: 'imageUrl user',
         })
-        .sort({ createdAt: -1 });
+        .sort({ voteEnhancementCount: -1, createdAt: -1 });
 
-      let modifiedVotes = votes.map((vote) => {
+      // Filter the votes array
+      const filteredVotes = votes.filter((vote) => {
+        // Check if neither imageOne.user nor imageTwo.user is equal to userId
+        const neitherUserIsOwner =
+          vote.imageOne.user.toString() !== userId &&
+          vote.imageTwo.user.toString() !== userId;
+
+        // Check if neither imageOne.user nor imageTwo.user is in the blockedUsers list
+        const neitherUserIsBlocked =
+          !blockedUsers.includes(vote.imageOne.user.toString()) &&
+          !blockedUsers.includes(vote.imageTwo.user.toString());
+
+        // Return true if both conditions are true
+        return neitherUserIsOwner && neitherUserIsBlocked;
+      });
+
+      let modifiedVotes = filteredVotes.map((vote) => {
         return {
           id: vote._id,
           imageOne: vote.imageOne,
@@ -228,6 +269,7 @@ export class VotesService {
         page: page,
         totalPages: totalPages,
         pageSize: pageSize,
+        userPoints: userPoints,
         totalItems: totalItems,
       };
     } catch (error) {

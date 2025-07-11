@@ -18,6 +18,9 @@ export class User extends Document {
 
   @Prop({ default: Role.User })
   role: Role;
+
+  @Prop({ type: [{ type: mongoose.Types.ObjectId, ref: 'User' }] })
+  blockedUsers: string[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

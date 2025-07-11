@@ -14,10 +14,7 @@ import {
   UploadedFiles,
 } from '@nestjs/common';
 import { UploadService } from './upload.service';
-import {
-  FileFieldsInterceptor,
-  FileInterceptor,
-} from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { CreateUploadDto } from './dto/create-upload.dto';
 import { JwtAuthGuard } from 'src/shared/jwt-auth-guard';
 import { User } from 'src/auth/types/User';
