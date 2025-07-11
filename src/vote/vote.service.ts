@@ -353,7 +353,7 @@ export class VotesService {
       await this.updateUploadsWithInteractedVote(vote?.imageOne?.id, vote.id);
       await this.updateUploadsWithInteractedVote(vote?.imageTwo?.id, vote.id);
 
-      return result;
+      return { result, userPoints: user.userPoints };
     } catch (error) {
       console.error(error);
       throw new Error('Error updating vote');

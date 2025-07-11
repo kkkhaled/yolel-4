@@ -28,9 +28,21 @@ export class VotesController {
     @Query('page') page: number,
     @Query('pageSize') pageSize: number,
     @Req() req: Request,
+
+    @Query('gender') gender?: string,
+    @Query('ageType') ageType?: string,
   ) {
+    const filterGender = gender ? gender : null;
+    const filterAgeType = ageType ? ageType : null;
     const user = req.user as User;
-    return await this.votesService.getAllVotes(user.id, page, pageSize);
+    return await this.votesService.getAllVotes(
+      user.id,
+      page,
+      pageSize,
+      filterGender,
+      filterAgeType,
+      user.userPoints,
+    );
   }
 
   @Get('admin/vote-list')
