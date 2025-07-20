@@ -4,7 +4,7 @@ import mongoose, { Model } from 'mongoose';
 import { Upload } from '../../schema/uploadSchema';
 import { Vote } from '../../schema/voteSchema';
 import { CreateUploadDto } from './dto/create-upload.dto';
-import { deleteImage } from 'src/utils/removeImages';
+// import { deleteImage } from 'src/utils/removeImages';
 import { SharedUploads } from 'src/schema/sharedUpload.schema';
 import { Report } from 'src/schema/reports';
 import { DeletedUploads } from 'src/schema/deleted-upload';
@@ -280,7 +280,7 @@ export class UploadService {
       throw new Error('No upload found');
     }
     await this.uploadModel.findByIdAndDelete(uploadId);
-    await deleteImage(upload.imageUrl);
+    // await deleteImage(upload.imageUrl);
     // delete all votes associated
     await this.deleteAssociatedVotes(upload.votes);
     // delete all shared associated

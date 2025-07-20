@@ -117,8 +117,8 @@ export class StaticsService {
     return {
       users: await this.user.countDocuments(),
       activeUsers: await this.user.countDocuments({ activeStatus: true }),
-      males: await this.user.countDocuments({ gender: 'male' }),
-      females: await this.user.countDocuments({ gender: 'female' }),
+      males: await this.uploadModel.countDocuments({ gender: 'male' }),
+      females: await this.uploadModel.countDocuments({ gender: 'female' }),
       votes: await this.voteModel.countDocuments(),
       uploads: await this.uploadModel.countDocuments(),
       removedUsers: await this.removedUser.countDocuments(),
