@@ -17,4 +17,7 @@ export class CreateUploadDto {
 
   @IsNotEmpty()
   gender: string;
+
+  @IsOptional()
+  isAdminCreated?: boolean;
 }

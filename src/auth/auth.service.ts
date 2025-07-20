@@ -1,10 +1,15 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from '../schema/userSchema';
 import { JwtService } from '@nestjs/jwt';
 import { RemovedUser } from 'src/schema/removedUserSchema';
-
+import { LoginDto } from './dto/login-dto';
+import * as bcrypt from 'bcryptjs';
 @Injectable()
 export class AuthService {
   constructor(
@@ -47,9 +52,55 @@ export class AuthService {
     }
   }
 
+  async loginAdmin(loginDto: LoginDto) {
+    const { email, password } = loginDto;
+
+    const user = await this.user.findOne({ email });
+
+    if (!user) {
+      throw new NotFoundException('Invalid email or password');
+    }
+
+    if (user.role != 'admin') {
+      throw new BadRequestException('user is not admin');
+    }
+
+    const isPasswordMatched = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordMatched) {
+      return new Error('Invalid email or password');
+    }
+
+    const token = this.jwtService.sign({ id: user._id });
+
+    return { token };
+  }
+
   // get user data
   async getUserById(userId: string): Promise<User | null> {
     return this.user.findById(userId);
+  }
+
+  // update user active status
+  async updateUserActiveStatus(userId: string, isActive: boolean) {
+    try {
+      let user = await this.user.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      } else {
+        user = await this.user.findByIdAndUpdate(
+          userId,
+          { activeStatus: isActive },
+          { new: true },
+        );
+        return {
+          message: 'active status updated successfully',
+          activeStatus: user.activeStatus,
+        };
+      }
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 
   async blockUser(userId: string, userToBlockId: string) {
@@ -121,6 +172,110 @@ export class AuthService {
       // Handle errors
       console.error('Error fetching blocked users:', error);
       throw new Error('Unable to fetch blocked users.');
+    }
+  }
+
+  async getAllBlockedUsersByAdmin(page: number = 1, pageSize: number = 10) {
+    const skip = (page - 1) * pageSize;
+
+    try {
+      const users = await this.user
+        .find({
+          IsBlocked: true,
+        })
+        .skip(skip)
+        .limit(pageSize);
+
+      const totalItems = await this.user.countDocuments();
+      const totalPages = Math.ceil(totalItems / pageSize);
+
+      return {
+        page: page,
+        totalPages: totalPages,
+        pageSize: pageSize,
+        length: users.length,
+        users,
+      };
+    } catch (error) {
+      console.error('Error fetching removed users:', error);
+      throw new Error('Unable to fetch removed users.');
+    }
+  }
+
+  // get all blocked user by admin
+  // get removed users for admin
+  async getAllRUsers(page: number = 1, pageSize: number = 10) {
+    const skip = (page - 1) * pageSize;
+
+    try {
+      const users = await this.user.find().skip(skip).limit(pageSize);
+
+      const totalItems = await this.user.countDocuments();
+      const totalPages = Math.ceil(totalItems / pageSize);
+
+      return {
+        page: page,
+        totalPages: totalPages,
+        pageSize: pageSize,
+        length: users.length,
+        users,
+      };
+    } catch (error) {
+      console.error('Error fetching removed users:', error);
+      throw new Error('Unable to fetch removed users.');
+    }
+  }
+
+  async ChangeBlockStatus(id: string) {
+    try {
+      let user = await this.user.findById(id);
+      if (!user) {
+        throw new Error(`user not found`);
+      } else {
+        user = await this.user.findByIdAndUpdate(
+          id,
+          { IsBlocked: !user.IsBlocked },
+          { new: true },
+        );
+        return user;
+      }
+    } catch (error) {
+      throw new Error(`unable to block user`);
+    }
+  }
+
+  async getAllRemovedUsers(
+    page: number = 1,
+    pageSize: number = 10,
+  ): Promise<{
+    removedUsers: RemovedUser[];
+    page: number;
+    totalPages: number;
+    pageSize: number;
+    length: number;
+  }> {
+    const skip = (page - 1) * pageSize;
+
+    try {
+      const removedUsers = await this.removedUser
+        .find()
+        .skip(skip)
+        .limit(pageSize)
+        .exec();
+
+      const totalItems = await this.removedUser.countDocuments();
+      const totalPages = Math.ceil(totalItems / pageSize);
+
+      return {
+        removedUsers: removedUsers,
+        page: page,
+        totalPages: totalPages,
+        pageSize: pageSize,
+        length: removedUsers.length,
+      };
+    } catch (error) {
+      console.error('Error fetching removed users:', error);
+      throw new Error('Unable to fetch removed users.');
     }
   }
 }

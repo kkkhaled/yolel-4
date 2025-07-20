@@ -32,6 +32,9 @@ export class Upload extends Document {
   @Prop({ default: true })
   isAllowForVote: boolean;
 
+  @Prop({ default: false , type: Boolean })
+  isAdminCreated: boolean;
+
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User' })
   user: User;
 

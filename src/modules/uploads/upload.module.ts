@@ -13,6 +13,8 @@ import {
   SharedUploadsSchema,
 } from 'src/schema/sharedUpload.schema';
 import { Report, ReportSchema } from 'src/schema/reports';
+import { DeletedUploadsSchema } from 'src/schema/deleted-upload';
+import { DeletedImageSchema } from 'src/schema/deleted-images';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { Report, ReportSchema } from 'src/schema/reports';
       },
       { name: SharedUploads.name, schema: SharedUploadsSchema },
       { name: Report.name, schema: ReportSchema },
+      { name: 'DeletedUploads', schema: DeletedUploadsSchema },
+      { name: 'DeletedImage', schema: DeletedImageSchema },
     ]),
     MulterModule.register({
       storage: diskStorage({

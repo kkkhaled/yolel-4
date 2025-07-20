@@ -7,7 +7,7 @@ export class TermsController {
   @Get()
   async getTerms(@Res() res: Response) {
     return res.sendFile(
-      join(`${process.cwd()}/src/views/terms-and-conditions.html`),
+      join(`${process.cwd()}/dist/pages/terms-and-conditions.html`),
     );
   }
 }

@@ -16,6 +16,20 @@ export class User extends Document {
   })
   userPoints?: number;
 
+  @Prop({
+    default: false,
+  })
+  IsBlocked: boolean;
+
+  @Prop()
+  email?: string;
+
+  @Prop()
+  password: string;
+
+  @Prop({ default: true })
+  activeStatus: boolean;
+
   @Prop({ default: Role.User })
   role: Role;
 

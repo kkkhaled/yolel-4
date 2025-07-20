@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -14,6 +15,8 @@ import { JwtAuthGuard } from 'src/shared/jwt-auth-guard';
 import { User } from './types/User';
 import { Roles } from 'src/decorators/role.decorator';
 import { UserRoleGuard } from 'src/middleware/userRole.guard';
+import { LoginDto } from './dto/login-dto';
+import { RemovedUser } from 'src/schema/removedUserSchema';
 
 @Controller('user')
 export class AuthController {
@@ -34,6 +37,17 @@ export class AuthController {
   async getUserProfile(@Req() req: Request) {
     const user = req.user as User;
     return this.authService.getUserById(user.id);
+  }
+
+  // update active status
+  @UseGuards(JwtAuthGuard)
+  @Put('update-active-status')
+  async updateActiveStatus(
+    @Req() req: Request,
+    @Body('activeStatus') activeStatus: boolean,
+  ) {
+    const user = req.user as User;
+    return await this.authService.updateUserActiveStatus(user.id, activeStatus);
   }
 
   @UseGuards(JwtAuthGuard, UserRoleGuard)
@@ -62,5 +76,59 @@ export class AuthController {
     return {
       blockedUsers: usersList,
     };
+  }
+
+  @Post('/admin/login')
+  loginAdmin(@Body() loginDto: LoginDto) {
+    return this.authService.loginAdmin(loginDto);
+  }
+
+  // get all removed users
+  // for admin
+  @Get('removed-users')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin')
+  async getAllRemovedUsers(
+    @Query('page') page: number = 1,
+    @Query('pageSize') pageSize: number = 10,
+  ): Promise<{
+    removedUsers: RemovedUser[];
+    page: number;
+    totalPages: number;
+    pageSize: number;
+    length: number;
+  }> {
+    return this.authService.getAllRemovedUsers(page, pageSize);
+  }
+
+  // get all removed users
+  // for admin
+  @Get('users')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin')
+  async getAllUsers(
+    @Query('page') page: number = 1,
+    @Query('pageSize') pageSize: number = 10,
+  ) {
+    return this.authService.getAllRUsers(page, pageSize);
+  }
+
+  // change user status
+  // for admin
+  @Put('block/:id')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin')
+  async changeUserBlockStatus(@Param('id') id: string) {
+    return await this.authService.ChangeBlockStatus(id);
+  }
+
+  @Get('/all-admin-blocked')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin')
+  async getAllBlockedUsersByAdmin(
+    @Query('page') page: number = 1,
+    @Query('pageSize') pageSize: number = 10,
+  ) {
+    return await this.authService.getAllBlockedUsersByAdmin(page, pageSize);
   }
 }

@@ -6,6 +6,9 @@ import { join } from 'path';
 export class PrivacyController {
   @Get()
   async getPrivacy(@Res() res: Response) {
-    return res.sendFile(join(`${process.cwd()}/src/views/privacy-policy.html`));
+    // return res.sendFile(join(__dirname, '..','..', 'pages', 'privacy-policy.html'));
+    return res.sendFile(
+      join(process.cwd(), 'dist', 'pages', 'privacy-policy.html'),
+    );
   }
 }

@@ -103,6 +103,39 @@ export class UploadController {
       gender,
       ageType,
       imagePath,
+      isAdminCreated: false,
+    };
+    return this.uploadService.create(createUploadDto);
+  }
+
+  @Get('removed/deletedCount')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin')
+  async getDeletedCount() {
+    return await this.uploadService.getDeletedImagesCount();
+  }
+
+  @Post('create/admin')
+  @UseInterceptors(FileFieldsInterceptor([{ name: 'image', maxCount: 1 }]))
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin')
+  async createByAdmin(
+    @Req() req: Request,
+    @UploadedFiles() file: { image?: any },
+    @Body('gender') gender,
+    @Body('imagePath') imagePath,
+    @Body('ageType') ageType,
+  ) {
+    const user = req.user as User;
+    // Create an instance of CreateUploadDto
+    const createUploadDto: CreateUploadDto = {
+      imageUrl: `${process.env.STORAGE_files}/${file.image[0].filename}`,
+      voteNum: 0,
+      user: user.id,
+      gender,
+      ageType,
+      imagePath,
+      isAdminCreated: true,
     };
     return this.uploadService.create(createUploadDto);
   }
@@ -115,19 +148,40 @@ export class UploadController {
   }
   @Delete('remove/:id')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
-  @Roles('user')
-  async removeUpload(@Param('id') id: string) {
-    return await this.uploadService.remove(id);
+  @Roles('user', 'admin')
+  async removeUpload(@Param('id') id: string, @Req() req: Request) {
+    const user = req.user as User;
+
+    return await this.uploadService.remove(id, user.id);
   }
 
-  // reset uploads
-
-  // async resetUploads() {
-  //   try {
-  //     // Fetch all uploads
-  //     return await this.uploadService.resetUploads();
-  //   } catch (error) {
-  //     throw new Error('Error resetting uploads');
-  //   }
-  // }
+  @Get('upload/search')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin')
+  async searchUploads(
+    @Query('percentage') percentage: number,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10,
+  ) {
+    const result = await this.uploadService.searchUploadsByPercentage(
+      percentage,
+      page,
+      limit,
+    );
+    return {
+      currentPage: page,
+      totalPages: Math.ceil(result.total / limit),
+      totalItems: result.total,
+      data: result.uploads,
+    };
+  }
+  @Get('images/deleted')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin', 'sub_admin')
+  async getDeletedUploads(
+    @Query('page') page: number = 1,
+    @Query('pageSize') pageSize: number = 10,
+  ) {
+    return await this.uploadService.getDeletedUploads(page, pageSize);
+  }
 }

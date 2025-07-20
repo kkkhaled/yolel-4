@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
 import { Upload } from '../../schema/uploadSchema';
@@ -7,6 +7,8 @@ import { CreateUploadDto } from './dto/create-upload.dto';
 import { deleteImage } from 'src/utils/removeImages';
 import { SharedUploads } from 'src/schema/sharedUpload.schema';
 import { Report } from 'src/schema/reports';
+import { DeletedUploads } from 'src/schema/deleted-upload';
+import { DeletedImage } from 'src/schema/deleted-images';
 
 @Injectable()
 export class UploadService {
@@ -15,6 +17,10 @@ export class UploadService {
     @InjectModel(Vote.name) private voteModel: Model<Upload>,
     @InjectModel(SharedUploads.name) private sharedUpload: Model<SharedUploads>,
     @InjectModel(Report.name) private reportModel: Model<Report>,
+    @InjectModel(DeletedUploads.name)
+    private deletedUploads: Model<DeletedUploads>,
+    @InjectModel(DeletedImage.name)
+    private deletedImage: Model<DeletedImage>,
   ) {}
 
   async findById(id: string) {
@@ -47,20 +53,6 @@ export class UploadService {
       throw new Error('Unable to fetch upload');
     }
   }
-  // async findById(id: string) {
-  //   let upload = await this.uploadModel.findById(id);
-  //   return {
-  //     _id: upload._id,
-  //     imageUrl: upload.imageUrl,
-  //     imagePath: upload.imagePath,
-  //     ageType: upload.ageType,
-  //     gender: upload.gender,
-  //     user: upload.user,
-  //     InteractedVotesLength: upload.InteractedVotes.length,
-  //     bestVotesLength: upload.bestVotes.length,
-  //     votesLength: upload.votes.length,
-  //   };
-  // }
 
   async findAllForAdmin(page: number = 1, pageSize: number = 10) {
     try {
@@ -118,43 +110,6 @@ export class UploadService {
     }
   }
 
-  // async findAllForAdmin(page: number = 1, pageSize: number = 10) {
-  //   const skip = (page - 1) * pageSize;
-  //   const totalItems = await this.uploadModel.countDocuments();
-
-  //   const uploads = await this.uploadModel
-  //     .find()
-  //     .skip(skip)
-  //     .limit(pageSize)
-  //     .sort({ createdAt: -1 })
-  //     .populate({
-  //       path: 'user',
-  //       select: 'name',
-  //     });
-
-  //   // Map over uploads array to modify each upload object
-  //   const modifiedUploads = uploads.map((upload) => {
-  //     return {
-  //       _id: upload._id,
-  //       imageUrl: upload.imageUrl,
-  //       imagePath: upload.imagePath,
-  //       ageType: upload.ageType,
-  //       gender: upload.gender,
-  //       user: upload.user,
-  //       InteractedVotesLength: upload.InteractedVotes.length,
-  //       bestVotesLength: upload.bestVotes.length,
-  //       votesLength: upload.votes.length,
-  //     };
-  //   });
-
-  //   return {
-  //     page: page,
-  //     pageSize: pageSize,
-  //     totalItems: totalItems,
-  //     items: modifiedUploads,
-  //   };
-  // }
-
   async findByUser(userId: string, page: number = 1, pageSize: number = 10) {
     try {
       const skip = (page - 1) * pageSize;
@@ -205,38 +160,101 @@ export class UploadService {
     }
   }
 
-  // async findByUser(userId: string, page: number = 1, pageSize: number = 10) {
-  //   const skip = (page - 1) * pageSize;
-  //   const totalItems = await this.uploadModel.countDocuments({ user: userId });
+  async searchUploadsByPercentage(
+    percentage: number,
+    page: number,
+    limit: number,
+  ) {
+    try {
+      const thresholds = {
+        10: { min: 99.99, max: Infinity },
+        9: { min: 99.97, max: 99.99 },
+        8: { min: 99.37, max: 99.97 },
+        7: { min: 93.31, max: 99.37 },
+        6: { min: 69.14, max: 93.31 },
+        5: { min: 30.85, max: 69.14 },
+        4: { min: 6.68, max: 30.85 },
+        3: { min: 0.62, max: 6.68 },
+        2: { min: 0.02, max: 0.62 },
+        1: { min: -Infinity, max: 0.02 },
+      };
 
-  //   const uploads = await this.uploadModel
-  //     .find({ user: userId })
-  //     .skip(skip)
-  //     .limit(pageSize)
-  //     .sort({ createdAt: -1 });
+      if (percentage == 0) {
+        const total = await this.uploadModel.countDocuments({
+          InteractedVotes: { $size: 0 },
+        });
 
-  //   // Map over uploads array to modify each upload object
-  //   const modifiedUploads = uploads.map((upload) => {
-  //     return {
-  //       _id: upload._id,
-  //       imageUrl: upload.imageUrl,
-  //       imagePath: upload.imagePath,
-  //       ageType: upload.ageType,
-  //       gender: upload.gender,
-  //       user: upload.user,
-  //       InteractedVotesLength: upload.InteractedVotes.length,
-  //       bestVotesLength: upload.bestVotes.length,
-  //       votesLength: upload.votes.length,
-  //     };
-  //   });
+        const uploads = await this.uploadModel
+          .find({ InteractedVotes: { $size: 0 } })
+          .skip((page - 1) * limit)
+          .limit(limit);
 
-  //   return {
-  //     page: page,
-  //     pageSize: pageSize,
-  //     totalItems: totalItems,
-  //     items: modifiedUploads,
-  //   };
-  // }
+        return { total, uploads };
+      } else {
+        const range = thresholds[percentage];
+        if (!range) {
+          throw new BadRequestException('Invalid percentage value');
+        }
+
+        const filter = {
+          $expr: {
+            $and: [
+              { $gt: [{ $size: '$InteractedVotes' }, 0] },
+              {
+                $gte: [
+                  {
+                    $cond: {
+                      if: { $gt: [{ $size: '$InteractedVotes' }, 0] },
+                      then: {
+                        $divide: [
+                          { $size: '$bestVotes' },
+                          { $size: '$InteractedVotes' },
+                        ],
+                      },
+                      else: 0,
+                    },
+                  },
+                  range.min / 100,
+                ],
+              },
+              {
+                $lt: [
+                  {
+                    $cond: {
+                      if: { $gt: [{ $size: '$InteractedVotes' }, 0] },
+                      then: {
+                        $divide: [
+                          { $size: '$bestVotes' },
+                          { $size: '$InteractedVotes' },
+                        ],
+                      },
+                      else: 0,
+                    },
+                  },
+                  range.max / 100,
+                ],
+              },
+            ],
+          },
+        };
+
+        // Count the total number of matching documents
+        const total = await this.uploadModel.countDocuments(filter);
+
+        // Fetch paginated results
+        const uploads = await this.uploadModel
+          .find(filter)
+          .skip((page - 1) * limit)
+          .limit(limit);
+
+        return { total, uploads };
+      }
+    } catch (error) {
+      console.log(error);
+
+      throw new BadRequestException(error);
+    }
+  }
 
   async create(createUploadDto: CreateUploadDto) {
     const createdUpload = new this.uploadModel(createUploadDto);
@@ -256,7 +274,7 @@ export class UploadService {
     return upload;
   }
   // remove upload
-  async remove(uploadId: string) {
+  async remove(uploadId: string, userId: string) {
     let upload = await this.uploadModel.findById(uploadId);
     if (!upload) {
       throw new Error('No upload found');
@@ -271,8 +289,32 @@ export class UploadService {
     });
 
     await this.reportModel.deleteMany({
-      upload: uploadId
-    })
+      upload: uploadId,
+    });
+
+    await this.deletedImage.create({
+      imageUrl: upload.imageUrl,
+      bestVotesNumbers: upload.bestVotes.length,
+      interactedVotesNumbers: upload.InteractedVotes.length,
+      imageOwner: upload.user,
+      deletedBy: userId,
+    });
+
+    await this.uploadModel.findByIdAndDelete(uploadId);
+
+    let deletedCount = await this.deletedUploads.find();
+    if (deletedCount.length > 0) {
+      await this.deletedUploads.findByIdAndUpdate(deletedCount[0]._id, {
+        $inc: {
+          count: 1,
+        },
+      });
+    } else {
+      await this.deletedUploads.create({
+        count: 1,
+      });
+    }
+
     // delete all reports associated
     // await this.reportModel.deleteMany({
     //   upload: uploadId,
@@ -309,6 +351,27 @@ export class UploadService {
       console.log('Uploads reset successfully.');
     } catch (error) {
       console.error('Error resetting uploads:', error);
+    }
+  }
+
+  async getDeletedImagesCount() {
+    console.log('get deleted images count');
+
+    const deletedCount = await this.deletedUploads.find();
+    return { count: deletedCount[0]?.count || 0 };
+  }
+
+  async getDeletedUploads(page: number = 1, pageSize: number = 10) {
+    try {
+      const result = await this.deletedImage
+        .find()
+        .skip((page - 1) * pageSize)
+        .limit(pageSize);
+
+      return result;
+    } catch (error) {
+      console.error('Error fetching deleted uploads:', error);
+      throw new Error('Unable to fetch deleted uploads');
     }
   }
 }
