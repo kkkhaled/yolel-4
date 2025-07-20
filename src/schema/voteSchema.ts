@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { Document } from 'mongoose';
-import { Upload } from './uploadSchema';
+import { AgeType, Upload } from './uploadSchema';
 
 @Schema({ timestamps: true })
 export class Vote extends Document {
@@ -18,6 +18,13 @@ export class Vote extends Document {
 
   @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }] })
   interactedUsers: mongoose.Types.ObjectId[];
+
+  @Prop({ type: String })
+  gender: string;
+
+  @Prop({ enum: AgeType })
+  ageType: AgeType;
+
 }
 
 export const VoteSchema = SchemaFactory.createForClass(Vote);

@@ -52,7 +52,8 @@ export class VotesService {
               uploadOne.ageType === uploadTwo.ageType &&
               uploadOne.user !== uploadTwo.user &&
               uploadOne.isAllowForVote &&
-              uploadTwo.isAllowForVote
+              uploadTwo.isAllowForVote&&
+          (uploadOne.user.toString() !== uploadTwo.user.toString() || (uploadOne.isAdminCreated && uploadTwo.isAdminCreated))
             ) {
               // Check if the pair has been used before
               const isUsed = await this.isPairUsed(uploadOne.id, uploadTwo.id);
@@ -61,6 +62,8 @@ export class VotesService {
                 const vote = new this.voteModel({
                   imageOne: uploadOne._id,
                   imageTwo: uploadTwo._id,
+                  gender: uploadOne.gender,
+                  ageType: uploadOne.ageType,
                 });
 
                 // Save the vote to the database
@@ -459,5 +462,32 @@ export class VotesService {
         await vote.imageTwo.save(); // Save changes to imageTwo
       }
     }
+  }
+
+    async updateVotesWithGenderAndAgeType() {
+    const votes = await this.voteModel.find({}).lean();
+
+    for (const vote of votes) {
+      const imageOne = vote.imageOne;
+      const imageTwo = vote.imageTwo;
+
+      const upload = await this.uploadModel.findOne({
+        _id: imageOne || imageTwo,
+      });
+
+      if (!upload) continue;
+
+      await this.voteModel.updateOne(
+        { _id: vote._id },
+        {
+          $set: {
+            gender: upload.gender,
+            ageType: upload.ageType,
+          },
+        },
+      );
+    }
+
+    return { message: 'Votes updated successfully' };
   }
 }

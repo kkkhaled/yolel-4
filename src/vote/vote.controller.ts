@@ -74,4 +74,9 @@ export class VotesController {
     const user = req.user as User;
     return this.votesService.updateVote(choiceImage, voteId, user.id);
   }
+
+  @Post('update-votes')
+  async runMigration() {
+    return await this.votesService.updateVotesWithGenderAndAgeType();
+  }
 }
