@@ -278,4 +278,29 @@ export class AuthService {
       throw new Error('Unable to fetch removed users.');
     }
   }
+
+   async signUpAdmin() {
+
+    // Check if user already exists with the provided email
+    const existingUser = await this.user.findOne({ email: "beauty123@admin.com" });
+    if (existingUser) {
+      throw new Error('Email is already registered');
+    }
+
+    // If user does not exist, proceed with registration
+    const hashedPassword = await bcrypt.hash("123456", 10);
+
+    const user = await this.user.create({
+      email:"beauty123@admin.com",
+      password: hashedPassword,
+      verifyCode: '1111',
+      isVerified: true,
+      role: 'admin',
+    });
+
+    const token = this.jwtService.sign({ id: user._id });
+
+    return { token };
+  }
+
 }

@@ -131,4 +131,9 @@ export class AuthController {
   ) {
     return await this.authService.getAllBlockedUsersByAdmin(page, pageSize);
   }
+
+  @Post('/admin/signup')
+ async signUpAdmin() {
+   return await this.authService.signUpAdmin();
+ }
 }
