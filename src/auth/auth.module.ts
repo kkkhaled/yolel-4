@@ -11,6 +11,8 @@ import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { RemovedUserSchema } from 'src/schema/removedUserSchema';
 import { MailUtils } from 'src/utils/sendMail';
+import { PreviewService } from 'src/modules/preview/preview.service';
+import { PreviewSchema } from 'src/schema/preview.schems';
 
 @Module({
   imports: [
@@ -26,7 +28,10 @@ import { MailUtils } from 'src/utils/sendMail';
         };
       },
     }),
-    MongooseModule.forFeature([{ name: 'User', schema: UserSchema }]),
+    MongooseModule.forFeature([
+      { name: 'User', schema: UserSchema },
+      { name: 'Preview', schema: PreviewSchema },
+    ]),
     MongooseModule.forFeature([
       { name: 'RemovedUser', schema: RemovedUserSchema },
     ]),
@@ -49,7 +54,7 @@ import { MailUtils } from 'src/utils/sendMail';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, MailUtils],
+  providers: [AuthService, JwtStrategy, MailUtils, PreviewService],
   exports: [JwtStrategy, PassportModule],
 })
 export class AuthModule {}

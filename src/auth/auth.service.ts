@@ -11,6 +11,7 @@ import { RemovedUser } from 'src/schema/removedUserSchema';
 import { LoginDto } from './dto/login-dto';
 import * as bcrypt from 'bcryptjs';
 import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
+import { PreviewService } from 'src/modules/preview/preview.service';
 @Injectable()
 export class AuthService {
   constructor(
@@ -18,6 +19,7 @@ export class AuthService {
     private user: Model<User>,
     @InjectModel(RemovedUser.name) private removedUser,
     private jwtService: JwtService,
+    private readonly previewService: PreviewService,
   ) {}
 
   async loginOrSignup(
@@ -25,6 +27,8 @@ export class AuthService {
     notificationToken?: string,
   ): Promise<any> {
     try {
+      const preview = await this.previewService.getPreview();
+
       const user = await this.user.findOne({ deviceToken: deviceToken });
 
       if (user) {
@@ -34,7 +38,10 @@ export class AuthService {
         }
         return {
           token,
-          user,
+          user: {
+            ...user.toObject(),
+            is_review: preview?.isPreview ?? false,
+          },
         };
       }
 
@@ -46,7 +53,7 @@ export class AuthService {
       const token = this.jwtService.sign({ id: newUser._id });
       return {
         token,
-        user: newUser,
+        user: { ...newUser.toObject(), is_review: preview?.isPreview ?? false },
       };
     } catch (error) {
       throw new BadRequestException(error, 'Error in login or signup');

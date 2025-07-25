@@ -21,6 +21,7 @@ import { EulaModule } from './modules/eula/eula.module';
 import { SharedUploadModule } from './modules/shared-uploads/shared-upload.module';
 import { StaticsModule } from './modules/statics/statics.module';
 import { AssetModule } from './modules/asset/asset.module';
+import { PreviewModule } from './modules/preview/previw.module';
 
 // Load environment variables
 dotenv.config();
@@ -55,6 +56,7 @@ dotenv.config();
     SharedVotesModule,
     SharedUploadModule,
     StaticsModule,
+    PreviewModule,
     PrivacyModule,
     TermsModule,
     EulaModule,
