@@ -29,7 +29,7 @@ export class ReportController {
 
   @Get()
   @UseGuards(JwtAuthGuard, UserRoleGuard)
-  @Roles('admin')
+  @Roles('admin', 'sub_admin')
   async getReports(@Query('page') page: number, @Query('size') size: number) {
     // If page or size is not provided, default to page 1 and size 10
     page = page ? +page : 1;
@@ -39,7 +39,7 @@ export class ReportController {
   }
   @Delete(':reportId')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
-  @Roles('admin')
+  @Roles('admin', 'sub_admin')
   async deleteReport(@Param('reportId') reportId: string) {
     await this.reportService.deleteReport(reportId);
     return {

@@ -17,4 +17,5 @@ export enum AgeType {
 export enum Role {
   User = 'user',
   Admin = 'admin',
+  Sub_Admin = 'sub_admin',
 }

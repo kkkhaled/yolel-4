@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { RemovedUser } from 'src/schema/removedUserSchema';
 import { LoginDto } from './dto/login-dto';
 import * as bcrypt from 'bcryptjs';
+import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
 @Injectable()
 export class AuthService {
   constructor(
@@ -61,7 +62,7 @@ export class AuthService {
       throw new NotFoundException('Invalid email or password');
     }
 
-    if (user.role != 'admin') {
+    if (user.role != 'admin' && user.role != 'sub_admin') {
       throw new BadRequestException('user is not admin');
     }
 
@@ -279,19 +280,20 @@ export class AuthService {
     }
   }
 
-   async signUpAdmin() {
-
+  async signUpAdmin() {
     // Check if user already exists with the provided email
-    const existingUser = await this.user.findOne({ email: "beauty123@admin.com" });
+    const existingUser = await this.user.findOne({
+      email: 'beauty123@admin.com',
+    });
     if (existingUser) {
       throw new Error('Email is already registered');
     }
 
     // If user does not exist, proceed with registration
-    const hashedPassword = await bcrypt.hash("123456", 10);
+    const hashedPassword = await bcrypt.hash('123456', 10);
 
     const user = await this.user.create({
-      email:"beauty123@admin.com",
+      email: 'beauty123@admin.com',
       password: hashedPassword,
       verifyCode: '1111',
       isVerified: true,
@@ -303,4 +305,30 @@ export class AuthService {
     return { token };
   }
 
+  async CreateSubAdmin(createSubAdminDto: CreateSubAdminDto) {
+    // check if user already exists with the provided email
+    const existingUser = await this.user.findOne({
+      email: createSubAdminDto.email,
+    });
+    if (existingUser) {
+      throw new Error('Email is already registered');
+    }
+
+    // if user does not exist, proceed with registration
+    const hashedPassword = await bcrypt.hash(createSubAdminDto.password, 10);
+
+    const user = await this.user.create({
+      email: createSubAdminDto.email,
+      password: hashedPassword,
+      isVerified: true,
+      verifyCode: Math.floor(1000 + Math.random() * 9000),
+      role: 'sub_admin',
+    });
+
+    return {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+    };
+  }
 }

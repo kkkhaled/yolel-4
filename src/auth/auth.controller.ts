@@ -17,6 +17,7 @@ import { Roles } from 'src/decorators/role.decorator';
 import { UserRoleGuard } from 'src/middleware/userRole.guard';
 import { LoginDto } from './dto/login-dto';
 import { RemovedUser } from 'src/schema/removedUserSchema';
+import { CreateSubAdminDto } from './dto/create-sub-admin.dto';
 
 @Controller('user')
 export class AuthController {
@@ -133,7 +134,14 @@ export class AuthController {
   }
 
   @Post('/admin/signup')
- async signUpAdmin() {
-   return await this.authService.signUpAdmin();
- }
+  async signUpAdmin() {
+    return await this.authService.signUpAdmin();
+  }
+
+  @Post('sub-admin/create')
+  @Roles('admin')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  async createSubAdmin(@Body() createSubAdminDto: CreateSubAdminDto) {
+    return this.authService.CreateSubAdmin(createSubAdminDto);
+  }
 }
