@@ -61,7 +61,7 @@ export class UploadController {
 
   @Get('list/admin')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
-  @Roles('admin')
+  @Roles('admin','sub_admin')
   async findAll(
     @Req() req: Request,
     @Query('page') page: number = 1,
@@ -148,7 +148,7 @@ export class UploadController {
   }
   @Delete('remove/:id')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
-  @Roles('user', 'admin')
+  @Roles('user', 'admin','sub_admin')
   async removeUpload(@Param('id') id: string, @Req() req: Request) {
     const user = req.user as User;
 
