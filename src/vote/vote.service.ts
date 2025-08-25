@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { Vote } from '../schema/voteSchema';
 import { User } from '../schema/userSchema';
 import { Upload } from 'src/schema/uploadSchema';
@@ -52,8 +52,9 @@ export class VotesService {
               uploadOne.ageType === uploadTwo.ageType &&
               uploadOne.user !== uploadTwo.user &&
               uploadOne.isAllowForVote &&
-              uploadTwo.isAllowForVote&&
-          (uploadOne.user.toString() !== uploadTwo.user.toString() || (uploadOne.isAdminCreated && uploadTwo.isAdminCreated))
+              uploadTwo.isAllowForVote &&
+              (uploadOne.user.toString() !== uploadTwo.user.toString() ||
+                (uploadOne.isAdminCreated && uploadTwo.isAdminCreated))
             ) {
               // Check if the pair has been used before
               const isUsed = await this.isPairUsed(uploadOne.id, uploadTwo.id);
@@ -464,7 +465,7 @@ export class VotesService {
     }
   }
 
-    async updateVotesWithGenderAndAgeType() {
+  async updateVotesWithGenderAndAgeType() {
     const votes = await this.voteModel.find({}).lean();
 
     for (const vote of votes) {
@@ -489,5 +490,110 @@ export class VotesService {
     }
 
     return { message: 'Votes updated successfully' };
+  }
+
+  async findByUserVotesSortedByOwnUploadId(params: {
+    userId: string;
+    page?: number;
+    limit?: number;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const { userId, page = 1, limit = 10, sortOrder = 'asc' } = params;
+
+    const userObjectId = new Types.ObjectId(userId);
+    const skip = (page - 1) * limit;
+    const dir = sortOrder === 'asc' ? 1 : -1;
+
+    const pipeline: any = [
+      // Join upload docs for imageOne
+      {
+        $lookup: {
+          from: 'uploads',
+          localField: 'imageOne',
+          foreignField: '_id',
+          as: 'imageOneDoc',
+        },
+      },
+      { $unwind: { path: '$imageOneDoc', preserveNullAndEmptyArrays: true } },
+
+      // Join upload docs for imageTwo
+      {
+        $lookup: {
+          from: 'uploads',
+          localField: 'imageTwo',
+          foreignField: '_id',
+          as: 'imageTwoDoc',
+        },
+      },
+      { $unwind: { path: '$imageTwoDoc', preserveNullAndEmptyArrays: true } },
+
+      // Compute the upload owned by the user in this vote
+      {
+        $addFields: {
+          ownUploadId: {
+            $cond: [
+              { $eq: ['$imageOneDoc.user', userObjectId] },
+              '$imageOneDoc._id',
+              {
+                $cond: [
+                  { $eq: ['$imageTwoDoc.user', userObjectId] },
+                  '$imageTwoDoc._id',
+                  null,
+                ],
+              },
+            ],
+          },
+        },
+      },
+
+      // Keep only votes related to this user
+      { $match: { ownUploadId: { $ne: null } } },
+
+      // Output shape
+      {
+        $project: {
+          imageOne: 1,
+          imageTwo: 1,
+          imageOneVoteNumber: 1,
+          imageTwoVoteNumber: 1,
+          interactedUsers: 1,
+          gender: 1,
+          ageType: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          imageOneDoc: 1,
+          imageTwoDoc: 1,
+          ownUploadId: 1,
+        },
+      },
+
+      // Sort by user-owned upload id (tie-break by createdAt for stable order)
+      { $sort: { ownUploadId: dir, createdAt: -1 } },
+
+      // Pagination + total count
+      {
+        $facet: {
+          data: [{ $skip: skip }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+      {
+        $addFields: {
+          total: { $ifNull: [{ $arrayElemAt: ['$totalCount.count', 0] }, 0] },
+        },
+      },
+      { $project: { totalCount: 0 } },
+    ];
+
+    const [result] = await this.voteModel.aggregate(pipeline);
+    const total = result?.total ?? 0;
+
+    return {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      data: result?.data ?? [],
+    };
   }
 }

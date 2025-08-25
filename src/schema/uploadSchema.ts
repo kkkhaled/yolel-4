@@ -32,7 +32,7 @@ export class Upload extends Document {
   @Prop({ default: true })
   isAllowForVote: boolean;
 
-  @Prop({ default: false , type: Boolean })
+  @Prop({ default: false, type: Boolean })
   isAdminCreated: boolean;
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'User' })
@@ -46,6 +46,11 @@ export class Upload extends Document {
 
   @Prop({ type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Vote' }] })
   InteractedVotes: mongoose.Types.ObjectId[];
+
+  @Prop({ type: Number, min: 1, max: 10, index: true })
+  level?: number;
 }
 
 export const UploadSchema = SchemaFactory.createForClass(Upload);
+UploadSchema.index({ user: 1 });
+UploadSchema.index({ level: 1, user: 1 });

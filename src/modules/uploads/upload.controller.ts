@@ -21,6 +21,7 @@ import { User } from 'src/auth/types/User';
 import { Request } from 'express';
 import { UserRoleGuard } from 'src/middleware/userRole.guard';
 import { Roles } from 'src/decorators/role.decorator';
+import { GetUploadsByUserLevelsDto } from './dto/get-user-levels-uplaods.dto';
 
 @Controller('posts')
 export class UploadController {
@@ -61,7 +62,7 @@ export class UploadController {
 
   @Get('list/admin')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
-  @Roles('admin','sub_admin')
+  @Roles('admin', 'sub_admin')
   async findAll(
     @Req() req: Request,
     @Query('page') page: number = 1,
@@ -148,7 +149,7 @@ export class UploadController {
   }
   @Delete('remove/:id')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
-  @Roles('user', 'admin','sub_admin')
+  @Roles('user', 'admin', 'sub_admin')
   async removeUpload(@Param('id') id: string, @Req() req: Request) {
     const user = req.user as User;
 
@@ -183,5 +184,26 @@ export class UploadController {
     @Query('pageSize') pageSize: number = 10,
   ) {
     return await this.uploadService.getDeletedUploads(page, pageSize);
+  }
+
+  @Get('user/levels')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('user')
+  async getByUserLevels(@Query() query: GetUploadsByUserLevelsDto, @Req() req) {
+    return this.uploadService.getUploadsByUserLevels(
+      {
+        page: query.page,
+        limit: query.limit,
+        includeSelf: query.includeSelf,
+        sort: query.sort,
+        order: query.order,
+      },
+      req.user.id,
+    );
+  }
+
+  @Post('migrate')
+  async migrate() {
+    return await this.uploadService.migrateUploadLevels();
   }
 }

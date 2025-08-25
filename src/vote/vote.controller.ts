@@ -15,6 +15,7 @@ import { JwtAuthGuard } from 'src/shared/jwt-auth-guard';
 import { User } from 'src/auth/types/User';
 import { UserRoleGuard } from 'src/middleware/userRole.guard';
 import { Roles } from 'src/decorators/role.decorator';
+import { GetUserVotesQueryDto } from './dto/user-vote-query.dto';
 
 @Controller('vote')
 export class VotesController {
@@ -78,5 +79,17 @@ export class VotesController {
   @Post('update-votes')
   async runMigration() {
     return await this.votesService.updateVotesWithGenderAndAgeType();
+  }
+
+  @Get('user')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('user')
+  async getVotesForUser(@Query() query: GetUserVotesQueryDto, @Req() req) {
+    return this.votesService.findByUserVotesSortedByOwnUploadId({
+      userId: req.user.id,
+      page: query.page,
+      limit: query.limit,
+      sortOrder: query.sortOrder,
+    });
   }
 }

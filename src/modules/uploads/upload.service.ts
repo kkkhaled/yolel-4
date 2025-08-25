@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { Upload } from '../../schema/uploadSchema';
 import { Vote } from '../../schema/voteSchema';
 import { CreateUploadDto } from './dto/create-upload.dto';
@@ -9,6 +9,8 @@ import { SharedUploads } from 'src/schema/sharedUpload.schema';
 import { Report } from 'src/schema/reports';
 import { DeletedUploads } from 'src/schema/deleted-upload';
 import { DeletedImage } from 'src/schema/deleted-images';
+import { computeLevel } from './utils/uplaod.util';
+import { GetUploadsByUserLevelsDto } from './dto/get-user-levels-uplaods.dto';
 
 @Injectable()
 export class UploadService {
@@ -372,6 +374,81 @@ export class UploadService {
     } catch (error) {
       console.error('Error fetching deleted uploads:', error);
       throw new Error('Unable to fetch deleted uploads');
+    }
+  }
+
+  async getUploadsByUserLevels(
+    params: GetUploadsByUserLevelsDto,
+    userId: string,
+  ) {
+    const {
+      page = 1,
+      limit = 20,
+      includeSelf = true,
+      sort = 'level',
+      order = 'desc',
+    } = params;
+
+    const userObjId = new Types.ObjectId(userId);
+    const skip = (page - 1) * limit;
+    const dir = order === 'asc' ? 1 : -1;
+
+    const userLevels: number[] = await this.uploadModel.distinct('level', {
+      user: userObjId,
+      level: { $ne: null },
+    });
+
+    if (!userLevels.length) {
+      return {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+        levels: [],
+        uploads: [],
+      };
+    }
+
+    const filter: any = { level: { $in: userLevels } };
+    if (!includeSelf) filter.user = { $ne: userObjId };
+
+    const total = await this.uploadModel.countDocuments(filter);
+
+    const sortSpec: Record<string, 1 | -1> = {};
+    if (sort === 'level') sortSpec.level = dir;
+    if (sort === 'createdAt') sortSpec.createdAt = dir;
+    if (!sortSpec.createdAt) sortSpec.createdAt = -1;
+
+    const uploads = await this.uploadModel
+      .find(filter)
+      .sort(sortSpec)
+      .skip(skip)
+      .limit(limit);
+
+    return {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      levels: userLevels, // helpful context for the client
+      uploads,
+    };
+  }
+
+  async migrateUploadLevels() {
+    const cursor = await this.uploadModel
+      .find({}, { _id: 1, bestVotes: 1, InteractedVotes: 1 })
+      .lean()
+      .cursor();
+
+    for await (const u of cursor) {
+      const best = Array.isArray(u.bestVotes) ? u.bestVotes.length : 0;
+      const inter = Array.isArray(u.InteractedVotes)
+        ? u.InteractedVotes.length
+        : 0;
+      const level = computeLevel(best, inter);
+
+      await this.uploadModel.updateOne({ _id: u._id }, { $set: { level } });
     }
   }
 }
