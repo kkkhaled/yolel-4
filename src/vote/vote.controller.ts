@@ -81,7 +81,7 @@ export class VotesController {
     return await this.votesService.updateVotesWithGenderAndAgeType();
   }
 
-  @Get('user')
+  @Get('ordered/user')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
   @Roles('user')
   async getVotesForUser(@Query() query: GetUserVotesQueryDto, @Req() req) {
