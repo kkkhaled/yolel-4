@@ -7,6 +7,7 @@ import {
   ExpressAdapter,
   NestExpressApplication,
 } from '@nestjs/platform-express';
+import { AppLoggingInterceptor } from './interceptors/app-logger.interceptor';
 
 async function bootstrap() {
   // admin.initializeApp({
@@ -17,6 +18,7 @@ async function bootstrap() {
 
   const staticDirectory = `${process.cwd()}/src/views/`;
   app.useStaticAssets(staticDirectory);
+  app.useGlobalInterceptors(new AppLoggingInterceptor());
 
   app.enableCors();
 
