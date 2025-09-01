@@ -292,6 +292,7 @@ export class VotesService {
       }
       return { vote };
     } catch (error) {
+      console.log(error);
       throw new Error('Unable to fetch vote.');
     }
   }
