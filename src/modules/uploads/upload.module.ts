@@ -15,6 +15,8 @@ import {
 import { Report, ReportSchema } from 'src/schema/reports';
 import { DeletedUploadsSchema } from 'src/schema/deleted-upload';
 import { DeletedImageSchema } from 'src/schema/deleted-images';
+import { FileUploadValidationService } from './utils/upload-validation-service';
+import { RefusedImages, RefusedImagesSchema } from 'src/schema/refused-images';
 
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { DeletedImageSchema } from 'src/schema/deleted-images';
       { name: Report.name, schema: ReportSchema },
       { name: 'DeletedUploads', schema: DeletedUploadsSchema },
       { name: 'DeletedImage', schema: DeletedImageSchema },
+      { name: RefusedImages.name, schema: RefusedImagesSchema },
     ]),
     MulterModule.register({
       storage: diskStorage({
@@ -46,7 +49,7 @@ import { DeletedImageSchema } from 'src/schema/deleted-images';
     }),
   ],
   controllers: [UploadController],
-  providers: [UploadService],
+  providers: [UploadService, FileUploadValidationService],
   exports: [],
 })
 export class UploadModule {}

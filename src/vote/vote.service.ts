@@ -6,6 +6,7 @@ import { User } from '../schema/userSchema';
 import { Upload } from 'src/schema/uploadSchema';
 import { Cron } from '@nestjs/schedule';
 import { FilterQuery } from 'mongoose';
+import { computeLevel } from 'src/modules/uploads/utils/uplaod.util';
 
 @Injectable()
 export class VotesService {
@@ -358,6 +359,8 @@ export class VotesService {
       await this.updateUploadsWithInteractedVote(vote?.imageOne?.id, vote.id);
       await this.updateUploadsWithInteractedVote(vote?.imageTwo?.id, vote.id);
 
+      await this.updateImageLevels([vote?.imageOne?.id, vote?.imageTwo?.id]);
+
       return { result, userPoints: user.userPoints };
     } catch (error) {
       console.error(error);
@@ -365,6 +368,20 @@ export class VotesService {
     }
   }
 
+  async updateImageLevels(imageIds: string[]) {
+    for (const imageId of imageIds.filter((id) => id)) {
+      const upload = await this.uploadModel
+        .findById(imageId, 'bestVotes InteractedVotes')
+        .lean();
+      if (!upload) continue;
+
+      const bestCount = upload.bestVotes?.length || 0;
+      const interactedCount = upload.InteractedVotes?.length || 0;
+      const newLevel = computeLevel(bestCount, interactedCount);
+
+      await this.uploadModel.updateOne({ _id: imageId }, { level: newLevel });
+    }
+  }
   // for update votes images (interacted votes) after update vote
   async updateUploadsWithInteractedVote(
     uploadId: mongoose.Types.ObjectId,
@@ -551,7 +568,71 @@ export class VotesService {
         // Keep only votes related to this user
         { $match: { ownUploadId: { $ne: null } } },
 
-        // Output shape
+        // 🎯 إعادة ترتيب الصور - imageOne دايماً للـ user المطلوب
+        {
+          $addFields: {
+            // Check if we need to swap images
+            needsSwap: { $ne: ['$imageOneDoc.user', userObjectId] },
+
+            // Store original values before swapping
+            originalImageOne: '$imageOne',
+            originalImageTwo: '$imageTwo',
+            originalImageOneDoc: '$imageOneDoc',
+            originalImageTwoDoc: '$imageTwoDoc',
+            originalImageOneVoteNumber: '$imageOneVoteNumber',
+            originalImageTwoVoteNumber: '$imageTwoVoteNumber',
+          },
+        },
+
+        // Perform the swap if needed
+        {
+          $addFields: {
+            imageOne: {
+              $cond: [
+                '$needsSwap',
+                '$originalImageTwo', // Swap: put imageTwo in imageOne
+                '$originalImageOne', // Keep: imageOne stays
+              ],
+            },
+            imageTwo: {
+              $cond: [
+                '$needsSwap',
+                '$originalImageOne', // Swap: put imageOne in imageTwo
+                '$originalImageTwo', // Keep: imageTwo stays
+              ],
+            },
+            imageOneDoc: {
+              $cond: [
+                '$needsSwap',
+                '$originalImageTwoDoc', // Swap: put imageTwoDoc in imageOneDoc
+                '$originalImageOneDoc', // Keep: imageOneDoc stays
+              ],
+            },
+            imageTwoDoc: {
+              $cond: [
+                '$needsSwap',
+                '$originalImageOneDoc', // Swap: put imageOneDoc in imageTwoDoc
+                '$originalImageTwoDoc', // Keep: imageTwoDoc stays
+              ],
+            },
+            imageOneVoteNumber: {
+              $cond: [
+                '$needsSwap',
+                '$originalImageTwoVoteNumber', // Swap vote numbers too
+                '$originalImageOneVoteNumber',
+              ],
+            },
+            imageTwoVoteNumber: {
+              $cond: [
+                '$needsSwap',
+                '$originalImageOneVoteNumber', // Swap vote numbers too
+                '$originalImageTwoVoteNumber',
+              ],
+            },
+          },
+        },
+
+        // Output shape (clean up temporary fields)
         {
           $project: {
             imageOne: 1,
@@ -566,6 +647,14 @@ export class VotesService {
             imageOneDoc: 1,
             imageTwoDoc: 1,
             ownUploadId: 1,
+            // Remove temporary fields
+            needsSwap: 0,
+            originalImageOne: 0,
+            originalImageTwo: 0,
+            originalImageOneDoc: 0,
+            originalImageTwoDoc: 0,
+            originalImageOneVoteNumber: 0,
+            originalImageTwoVoteNumber: 0,
           },
         },
 

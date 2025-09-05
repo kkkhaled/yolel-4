@@ -12,6 +12,8 @@ import {
   Delete,
   Query,
   UploadedFiles,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { UploadService } from './upload.service';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
@@ -22,10 +24,15 @@ import { Request } from 'express';
 import { UserRoleGuard } from 'src/middleware/userRole.guard';
 import { Roles } from 'src/decorators/role.decorator';
 import { GetUploadsByUserLevelsDto } from './dto/get-user-levels-uplaods.dto';
+import * as fs from 'fs';
+import { FileUploadValidationService } from './utils/upload-validation-service';
 
 @Controller('posts')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) {}
+  constructor(
+    private readonly uploadService: UploadService,
+    private readonly fileValidationService: FileUploadValidationService,
+  ) {}
 
   @Get(':id')
   async findById(@Param('id') id: string) {
@@ -91,24 +98,66 @@ export class UploadController {
   async create(
     @Req() req: Request,
     @UploadedFiles() file: { image?: any },
-    @Body('gender') gender,
-    @Body('imagePath') imagePath,
-    @Body('ageType') ageType,
+    @Body('gender') gender: string,
+    @Body('imagePath') imagePath: string,
+    @Body('ageType') ageType: string,
   ) {
     const user = req.user as User;
-    // Create an instance of CreateUploadDto
-    const createUploadDto: CreateUploadDto = {
-      imageUrl: `${process.env.STORAGE_files}/${file.image[0].filename}`,
-      voteNum: 0,
-      user: user.id,
-      gender,
-      ageType,
-      imagePath,
-      isAdminCreated: false,
-    };
-    return this.uploadService.create(createUploadDto);
-  }
 
+    if (!file?.image?.[0]) {
+      throw new HttpException('Image is required', HttpStatus.BAD_REQUEST);
+    }
+
+    const uploadedFile = file.image[0];
+    const imageUrl = `${process.env.STORAGE_files}/${uploadedFile.filename}`;
+
+    try {
+      // التحقق من صحة الصورة
+      const fileBuffer = fs.readFileSync(uploadedFile.path);
+      const validationResult =
+        await this.fileValidationService.validatePhoto(fileBuffer);
+
+      // ✅ الصورة صحيحة - حفظ في uploads
+      const createUploadDto: CreateUploadDto = {
+        imageUrl,
+        voteNum: 0,
+        user: user.id,
+        gender,
+        ageType,
+        imagePath,
+        isAdminCreated: false,
+      };
+
+      const result = await this.uploadService.create(createUploadDto);
+      return {
+        ...result.toObject(),
+        message: 'Image uploaded successfully ✅',
+      };
+    } catch (error) {
+      let refusalReason = 'Photo validation failed';
+
+      if (error instanceof HttpException) {
+        const response = error.getResponse() as any;
+        refusalReason = response.reason || refusalReason;
+      }
+
+      await this.uploadService.createRefusedImage({
+        imageUrl,
+        reason: refusalReason,
+        gender,
+        ageType,
+      });
+
+      throw new HttpException(
+        {
+          status: 'rejected',
+          reason: refusalReason,
+          message: 'Image validation failed',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
   @Get('removed/deletedCount')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
   @Roles('admin')
@@ -184,6 +233,16 @@ export class UploadController {
     @Query('pageSize') pageSize: number = 10,
   ) {
     return await this.uploadService.getDeletedUploads(page, pageSize);
+  }
+
+  @Get('images/refused')
+  @UseGuards(JwtAuthGuard, UserRoleGuard)
+  @Roles('admin', 'sub_admin')
+  async getRefusedUploads(
+    @Query('page') page: number = 1,
+    @Query('pageSize') pageSize: number = 10,
+  ) {
+    return await this.uploadService.getRefusedImages(page, pageSize);
   }
 
   @Get('user/levels')

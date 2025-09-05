@@ -11,6 +11,7 @@ import { DeletedUploads } from 'src/schema/deleted-upload';
 import { DeletedImage } from 'src/schema/deleted-images';
 import { computeLevel } from './utils/uplaod.util';
 import { GetUploadsByUserLevelsDto } from './dto/get-user-levels-uplaods.dto';
+import { RefusedImages } from 'src/schema/refused-images';
 
 @Injectable()
 export class UploadService {
@@ -23,6 +24,8 @@ export class UploadService {
     private deletedUploads: Model<DeletedUploads>,
     @InjectModel(DeletedImage.name)
     private deletedImage: Model<DeletedImage>,
+    @InjectModel(RefusedImages.name)
+    private refusedImage: Model<RefusedImages>,
   ) {}
 
   async findById(id: string) {
@@ -262,6 +265,31 @@ export class UploadService {
     const createdUpload = new this.uploadModel(createUploadDto);
     return createdUpload.save();
   }
+
+  async createRefusedImage(data: {
+    imageUrl: string;
+    reason: string;
+    gender?: string;
+    ageType?: string;
+  }) {
+    const refusedImage = new this.refusedImage({
+      data,
+    });
+    return refusedImage.save();
+  }
+
+  // get all refused image with paginated
+  async getRefusedImages(page: number = 1, pageSize: number = 10) {
+    const refusedImage = await this.refusedImage
+      .find()
+      .skip((page - 1) * pageSize)
+      .limit(pageSize);
+
+    const total = await this.refusedImage.countDocuments();
+
+    return { refusedImage, total };
+  }
+
   // update upload statue for voting
   async updateUploadVoteStatus(uploadId: string) {
     let upload = await this.uploadModel.findById(uploadId);
