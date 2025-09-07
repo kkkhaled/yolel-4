@@ -142,7 +142,7 @@ export class UploadController {
 
       await this.uploadService.createRefusedImage({
         imageUrl,
-        reason: refusalReason,
+        refusalReason: refusalReason,
         gender,
         ageType,
       });

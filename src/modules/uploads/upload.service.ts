@@ -268,7 +268,7 @@ export class UploadService {
 
   async createRefusedImage(data: {
     imageUrl: string;
-    reason: string;
+    refusalReason: string;
     gender?: string;
     ageType?: string;
   }) {
