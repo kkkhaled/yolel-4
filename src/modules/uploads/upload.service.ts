@@ -273,7 +273,10 @@ export class UploadService {
     ageType?: string;
   }) {
     const refusedImage = new this.refusedImage({
-      data,
+      imageUrl: data.imageUrl,
+      refusalReason: data.refusalReason,
+      gender: data.gender,
+      ageType: data.ageType,
     });
     return refusedImage.save();
   }
