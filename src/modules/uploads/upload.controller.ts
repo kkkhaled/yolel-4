@@ -130,7 +130,6 @@ export class UploadController {
 
       const result = await this.uploadService.create(createUploadDto);
       return {
-        ...result.toObject(),
         message: 'Image uploaded successfully ✅',
       };
     } catch (error) {
@@ -148,14 +147,10 @@ export class UploadController {
         ageType,
       });
 
-      throw new HttpException(
-        {
-          status: 'rejected',
-          reason: refusalReason,
-          message: 'Image validation failed',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
+      return {
+        message: 'refused image created with flag isRefused true',
+        reason: refusalReason,
+      };
     }
   }
   @Get('removed/deletedCount')
