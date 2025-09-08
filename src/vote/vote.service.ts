@@ -523,7 +523,7 @@ export class VotesService {
   }) {
     const { userId, page = 1, limit = 10, sortOrder = 'asc' } = params;
 
-    // 1) Validate userId early (avoid ObjectId constructor throwing inside try)
+    // Validate userId early
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid userId format.');
     }
@@ -532,13 +532,12 @@ export class VotesService {
     const skip = (page - 1) * limit;
     const dir = sortOrder === 'asc' ? 1 : -1;
 
-    // If your uploads.user is ObjectId, you can keep direct comparisons.
-    // If there's any chance it's stored as a string, use $convert to objectId safely:
+    // Helper expression to safely convert possible string ObjectIds
     const toObjectId = (expr: any) => ({
       $convert: {
         input: expr,
         to: 'objectId',
-        onError: expr, // keep original if already ObjectId or not convertible
+        onError: expr, // if already ObjectId or not convertible, keep as is
         onNull: null,
       },
     });
@@ -547,7 +546,7 @@ export class VotesService {
       // Join upload docs for imageOne
       {
         $lookup: {
-          from: 'uploads', // ensure this is the real collection name
+          from: 'uploads', // ensure this matches your actual collection name
           localField: 'imageOne',
           foreignField: '_id',
           as: 'imageOneDoc',
@@ -566,13 +565,15 @@ export class VotesService {
       },
       { $unwind: { path: '$imageTwoDoc', preserveNullAndEmptyArrays: true } },
 
-      // Compute the upload owned by the user in this vote (robust to string/ObjectId)
+      // Normalize user ids for comparisons
       {
         $addFields: {
           imageOneUserId: toObjectId('$imageOneDoc.user'),
           imageTwoUserId: toObjectId('$imageTwoDoc.user'),
         },
       },
+
+      // Compute the upload owned by the user in this vote
       {
         $addFields: {
           ownUploadId: {
@@ -594,11 +595,12 @@ export class VotesService {
       // Keep only votes related to this user
       { $match: { ownUploadId: { $ne: null } } },
 
-      // Decide if we need to swap (we want imageOne to be the user's image)
+      // Decide if we need to swap so that imageOne is always the user's image
       {
         $addFields: {
           needsSwap: { $ne: ['$imageOneUserId', userObjectId] },
 
+          // Keep originals to swap cleanly
           originalImageOne: '$imageOne',
           originalImageTwo: '$imageTwo',
           originalImageOneDoc: '$imageOneDoc',
@@ -648,9 +650,10 @@ export class VotesService {
         },
       },
 
-      // Clean up
+      // Include the fields you want to return (no exclusions here, except optional _id)
       {
         $project: {
+          // _id: 0, // uncomment if you want to hide _id
           imageOne: 1,
           imageTwo: 1,
           imageOneVoteNumber: 1,
@@ -663,24 +666,28 @@ export class VotesService {
           imageOneDoc: 1,
           imageTwoDoc: 1,
           ownUploadId: 1,
-
-          // remove temps
-          needsSwap: 0,
-          originalImageOne: 0,
-          originalImageTwo: 0,
-          originalImageOneDoc: 0,
-          originalImageTwoDoc: 0,
-          originalImageOneVoteNumber: 0,
-          originalImageTwoVoteNumber: 0,
-          imageOneUserId: 0,
-          imageTwoUserId: 0,
         },
       },
 
-      // Sort by user's upload id + tiebreaker (createdAt desc)
+      // Remove temp fields to avoid mixing inclusion/exclusion in the same $project
+      {
+        $unset: [
+          'needsSwap',
+          'originalImageOne',
+          'originalImageTwo',
+          'originalImageOneDoc',
+          'originalImageTwoDoc',
+          'originalImageOneVoteNumber',
+          'originalImageTwoVoteNumber',
+          'imageOneUserId',
+          'imageTwoUserId',
+        ],
+      },
+
+      // Sort by user's upload id (asc/desc) and tie-break by createdAt desc
       { $sort: { ownUploadId: dir, createdAt: -1 } },
 
-      // Paginate + total
+      // Pagination + total count
       {
         $facet: {
           data: [{ $skip: skip }, { $limit: limit }],
@@ -700,8 +707,8 @@ export class VotesService {
         .aggregate(pipeline)
         .allowDiskUse(true);
       const result = results[0] ?? { data: [], total: 0 };
-
       const total = result.total ?? 0;
+
       return {
         page,
         limit,
@@ -710,7 +717,6 @@ export class VotesService {
         data: result.data ?? [],
       };
     } catch (err) {
-      // Log the real error so you can see it in your logs
       console.error('findByUserVotesSortedByOwnUploadId error:', err);
       throw new InternalServerErrorException('Unable to fetch votes.');
     }
