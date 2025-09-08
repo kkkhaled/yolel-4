@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
 import { Vote } from '../schema/voteSchema';
@@ -516,179 +521,198 @@ export class VotesService {
     limit?: number;
     sortOrder?: 'asc' | 'desc';
   }) {
+    const { userId, page = 1, limit = 10, sortOrder = 'asc' } = params;
+
+    // 1) Validate userId early (avoid ObjectId constructor throwing inside try)
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid userId format.');
+    }
+    const userObjectId = new Types.ObjectId(userId);
+
+    const skip = (page - 1) * limit;
+    const dir = sortOrder === 'asc' ? 1 : -1;
+
+    // If your uploads.user is ObjectId, you can keep direct comparisons.
+    // If there's any chance it's stored as a string, use $convert to objectId safely:
+    const toObjectId = (expr: any) => ({
+      $convert: {
+        input: expr,
+        to: 'objectId',
+        onError: expr, // keep original if already ObjectId or not convertible
+        onNull: null,
+      },
+    });
+
+    const pipeline: any[] = [
+      // Join upload docs for imageOne
+      {
+        $lookup: {
+          from: 'uploads', // ensure this is the real collection name
+          localField: 'imageOne',
+          foreignField: '_id',
+          as: 'imageOneDoc',
+        },
+      },
+      { $unwind: { path: '$imageOneDoc', preserveNullAndEmptyArrays: true } },
+
+      // Join upload docs for imageTwo
+      {
+        $lookup: {
+          from: 'uploads',
+          localField: 'imageTwo',
+          foreignField: '_id',
+          as: 'imageTwoDoc',
+        },
+      },
+      { $unwind: { path: '$imageTwoDoc', preserveNullAndEmptyArrays: true } },
+
+      // Compute the upload owned by the user in this vote (robust to string/ObjectId)
+      {
+        $addFields: {
+          imageOneUserId: toObjectId('$imageOneDoc.user'),
+          imageTwoUserId: toObjectId('$imageTwoDoc.user'),
+        },
+      },
+      {
+        $addFields: {
+          ownUploadId: {
+            $cond: [
+              { $eq: ['$imageOneUserId', userObjectId] },
+              '$imageOneDoc._id',
+              {
+                $cond: [
+                  { $eq: ['$imageTwoUserId', userObjectId] },
+                  '$imageTwoDoc._id',
+                  null,
+                ],
+              },
+            ],
+          },
+        },
+      },
+
+      // Keep only votes related to this user
+      { $match: { ownUploadId: { $ne: null } } },
+
+      // Decide if we need to swap (we want imageOne to be the user's image)
+      {
+        $addFields: {
+          needsSwap: { $ne: ['$imageOneUserId', userObjectId] },
+
+          originalImageOne: '$imageOne',
+          originalImageTwo: '$imageTwo',
+          originalImageOneDoc: '$imageOneDoc',
+          originalImageTwoDoc: '$imageTwoDoc',
+          originalImageOneVoteNumber: '$imageOneVoteNumber',
+          originalImageTwoVoteNumber: '$imageTwoVoteNumber',
+        },
+      },
+
+      // Perform swap if needed
+      {
+        $addFields: {
+          imageOne: {
+            $cond: ['$needsSwap', '$originalImageTwo', '$originalImageOne'],
+          },
+          imageTwo: {
+            $cond: ['$needsSwap', '$originalImageOne', '$originalImageTwo'],
+          },
+          imageOneDoc: {
+            $cond: [
+              '$needsSwap',
+              '$originalImageTwoDoc',
+              '$originalImageOneDoc',
+            ],
+          },
+          imageTwoDoc: {
+            $cond: [
+              '$needsSwap',
+              '$originalImageOneDoc',
+              '$originalImageTwoDoc',
+            ],
+          },
+          imageOneVoteNumber: {
+            $cond: [
+              '$needsSwap',
+              '$originalImageTwoVoteNumber',
+              '$originalImageOneVoteNumber',
+            ],
+          },
+          imageTwoVoteNumber: {
+            $cond: [
+              '$needsSwap',
+              '$originalImageOneVoteNumber',
+              '$originalImageTwoVoteNumber',
+            ],
+          },
+        },
+      },
+
+      // Clean up
+      {
+        $project: {
+          imageOne: 1,
+          imageTwo: 1,
+          imageOneVoteNumber: 1,
+          imageTwoVoteNumber: 1,
+          interactedUsers: 1,
+          gender: 1,
+          ageType: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          imageOneDoc: 1,
+          imageTwoDoc: 1,
+          ownUploadId: 1,
+
+          // remove temps
+          needsSwap: 0,
+          originalImageOne: 0,
+          originalImageTwo: 0,
+          originalImageOneDoc: 0,
+          originalImageTwoDoc: 0,
+          originalImageOneVoteNumber: 0,
+          originalImageTwoVoteNumber: 0,
+          imageOneUserId: 0,
+          imageTwoUserId: 0,
+        },
+      },
+
+      // Sort by user's upload id + tiebreaker (createdAt desc)
+      { $sort: { ownUploadId: dir, createdAt: -1 } },
+
+      // Paginate + total
+      {
+        $facet: {
+          data: [{ $skip: skip }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+      {
+        $addFields: {
+          total: { $ifNull: [{ $arrayElemAt: ['$totalCount.count', 0] }, 0] },
+        },
+      },
+      { $project: { totalCount: 0 } },
+    ];
+
     try {
-      const { userId, page = 1, limit = 10, sortOrder = 'asc' } = params;
+      const results = await this.voteModel
+        .aggregate(pipeline)
+        .allowDiskUse(true);
+      const result = results[0] ?? { data: [], total: 0 };
 
-      const userObjectId = new Types.ObjectId(userId);
-      const skip = (page - 1) * limit;
-      const dir = sortOrder === 'asc' ? 1 : -1;
-
-      const pipeline: any = [
-        // Join upload docs for imageOne
-        {
-          $lookup: {
-            from: 'uploads',
-            localField: 'imageOne',
-            foreignField: '_id',
-            as: 'imageOneDoc',
-          },
-        },
-        { $unwind: { path: '$imageOneDoc', preserveNullAndEmptyArrays: true } },
-
-        // Join upload docs for imageTwo
-        {
-          $lookup: {
-            from: 'uploads',
-            localField: 'imageTwo',
-            foreignField: '_id',
-            as: 'imageTwoDoc',
-          },
-        },
-        { $unwind: { path: '$imageTwoDoc', preserveNullAndEmptyArrays: true } },
-
-        // Compute the upload owned by the user in this vote
-        {
-          $addFields: {
-            ownUploadId: {
-              $cond: [
-                { $eq: ['$imageOneDoc.user', userObjectId] },
-                '$imageOneDoc._id',
-                {
-                  $cond: [
-                    { $eq: ['$imageTwoDoc.user', userObjectId] },
-                    '$imageTwoDoc._id',
-                    null,
-                  ],
-                },
-              ],
-            },
-          },
-        },
-
-        // Keep only votes related to this user
-        { $match: { ownUploadId: { $ne: null } } },
-
-        // 🎯 إعادة ترتيب الصور - imageOne دايماً للـ user المطلوب
-        {
-          $addFields: {
-            // Check if we need to swap images
-            needsSwap: { $ne: ['$imageOneDoc.user', userObjectId] },
-
-            // Store original values before swapping
-            originalImageOne: '$imageOne',
-            originalImageTwo: '$imageTwo',
-            originalImageOneDoc: '$imageOneDoc',
-            originalImageTwoDoc: '$imageTwoDoc',
-            originalImageOneVoteNumber: '$imageOneVoteNumber',
-            originalImageTwoVoteNumber: '$imageTwoVoteNumber',
-          },
-        },
-
-        // Perform the swap if needed
-        {
-          $addFields: {
-            imageOne: {
-              $cond: [
-                '$needsSwap',
-                '$originalImageTwo', // Swap: put imageTwo in imageOne
-                '$originalImageOne', // Keep: imageOne stays
-              ],
-            },
-            imageTwo: {
-              $cond: [
-                '$needsSwap',
-                '$originalImageOne', // Swap: put imageOne in imageTwo
-                '$originalImageTwo', // Keep: imageTwo stays
-              ],
-            },
-            imageOneDoc: {
-              $cond: [
-                '$needsSwap',
-                '$originalImageTwoDoc', // Swap: put imageTwoDoc in imageOneDoc
-                '$originalImageOneDoc', // Keep: imageOneDoc stays
-              ],
-            },
-            imageTwoDoc: {
-              $cond: [
-                '$needsSwap',
-                '$originalImageOneDoc', // Swap: put imageOneDoc in imageTwoDoc
-                '$originalImageTwoDoc', // Keep: imageTwoDoc stays
-              ],
-            },
-            imageOneVoteNumber: {
-              $cond: [
-                '$needsSwap',
-                '$originalImageTwoVoteNumber', // Swap vote numbers too
-                '$originalImageOneVoteNumber',
-              ],
-            },
-            imageTwoVoteNumber: {
-              $cond: [
-                '$needsSwap',
-                '$originalImageOneVoteNumber', // Swap vote numbers too
-                '$originalImageTwoVoteNumber',
-              ],
-            },
-          },
-        },
-
-        // Output shape (clean up temporary fields)
-        {
-          $project: {
-            imageOne: 1,
-            imageTwo: 1,
-            imageOneVoteNumber: 1,
-            imageTwoVoteNumber: 1,
-            interactedUsers: 1,
-            gender: 1,
-            ageType: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            imageOneDoc: 1,
-            imageTwoDoc: 1,
-            ownUploadId: 1,
-            // Remove temporary fields
-            needsSwap: 0,
-            originalImageOne: 0,
-            originalImageTwo: 0,
-            originalImageOneDoc: 0,
-            originalImageTwoDoc: 0,
-            originalImageOneVoteNumber: 0,
-            originalImageTwoVoteNumber: 0,
-          },
-        },
-
-        // Sort by user-owned upload id (tie-break by createdAt for stable order)
-        { $sort: { ownUploadId: dir, createdAt: -1 } },
-
-        // Pagination + total count
-        {
-          $facet: {
-            data: [{ $skip: skip }, { $limit: limit }],
-            totalCount: [{ $count: 'count' }],
-          },
-        },
-        {
-          $addFields: {
-            total: { $ifNull: [{ $arrayElemAt: ['$totalCount.count', 0] }, 0] },
-          },
-        },
-        { $project: { totalCount: 0 } },
-      ];
-
-      const [result] = await this.voteModel.aggregate(pipeline);
-      const total = result?.total ?? 0;
-
+      const total = result.total ?? 0;
       return {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit),
-        data: result?.data ?? [],
+        data: result.data ?? [],
       };
-    } catch (error) {
-      console.log(error);
-      throw new Error('Unable to fetch votes.');
+    } catch (err) {
+      // Log the real error so you can see it in your logs
+      console.error('findByUserVotesSortedByOwnUploadId error:', err);
+      throw new InternalServerErrorException('Unable to fetch votes.');
     }
   }
 }
