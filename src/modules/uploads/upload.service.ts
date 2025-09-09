@@ -441,6 +441,7 @@ export class UploadService {
     }
 
     const filter: any = { level: { $in: userLevels } };
+    filter.user = { $ne: userObjId };
     if (!includeSelf) filter.user = { $ne: userObjId };
 
     const total = await this.uploadModel.countDocuments(filter);
