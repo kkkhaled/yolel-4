@@ -7,27 +7,22 @@ type Ok = { status: 'accepted'; message: string };
 type Bad = never;
 
 type Stage1Result = {
-  // من FACE_DETECTION
   facesCount: number;
   faceTooSmall: boolean;
   faceFrontal: boolean;
   faceConfident: boolean;
   faceBox?: { x: number; y: number; w: number; h: number };
-
-  // من SAFE_SEARCH_DETECTION
   spoofVeryLikely: boolean;
-
-  // من الفحوصات المحلية
   localValid: boolean;
   localReason?: string;
-
-  // حالة حدّية تحتاج دفعة تانية؟
   borderline: boolean;
+  sunglassesLikely?: boolean;
 };
 
 type Stage2Result = {
   forbiddenLabelsDetected: string[];
   hasPhotographicPersonHints: boolean;
+  hasStrongPhotoHints: boolean;
 };
 
 @Injectable()
@@ -35,19 +30,17 @@ export class FileUploadValidationService {
   private visionClient: ImageAnnotatorClient;
 
   constructor() {
-    // ملاحظة: لو Service Account غير متاح، نكمل بـ apiKey كما هو.
     this.visionClient = new ImageAnnotatorClient({
       apiKey: process.env.GOOGLE_CLOUD_API_KEY,
     } as any);
   }
 
-  // ----------------- الواجهة العامة -----------------
   async validatePhoto(buffer: Buffer): Promise<Ok> {
     try {
-      // الدفعة الأولى: 3 مع بعض
+      // ===== Stage 1: محلي + FACE/SAFE =====
       const stage1 = await this.runStage1(buffer);
 
-      // قرارات الرفض المبكر
+      // رفضات مبكرة
       if (!stage1.localValid)
         this.reject(stage1.localReason || 'Invalid image');
       if (stage1.facesCount === 0) this.reject('No face detected in the image');
@@ -61,23 +54,38 @@ export class FileUploadValidationService {
       if (stage1.spoofVeryLikely)
         this.reject('AI-generated or spoofed image detected');
 
-      // لو مش حدّي ⇒ قبول فوري بدون دفعة تانية
+      // منع النظارة الداكنة
+      if (stage1.sunglassesLikely) {
+        this.reject(
+          'Eyes are not clearly visible (sunglasses or heavy occlusion)',
+        );
+      }
+
+      // لو واضح إنها سليمة ومش حدّية ⇒ قبول
       if (!stage1.borderline) {
         return { status: 'accepted', message: 'Valid photo ✅' };
       }
 
-      // الدفعة الثانية: 3 مع بعض (Labels + مؤشرات فوتوغرافية + قصّ اختياري)
+      // ===== فحص نعومة سريع (شرطي) قبل الدخول لمرحلة الـ Labels =====
+      const smooth = await this.checkAIsmoothness(buffer);
+      if (!smooth.tooSmooth) {
+        // حدّي بسيط لكن مش "ناعمة جدًا" ⇒ اعتبرها مقبولة بدون Labels
+        return { status: 'accepted', message: 'Valid photo ✅' };
+      }
+
+      // ===== Stage 2: LABEL_DETECTION (عند الحاجة فقط) =====
       const stage2 = await this.runStage2(buffer, stage1.faceBox);
 
-      // قرارات الدفعة الثانية
       if (stage2.forbiddenLabelsDetected.length) {
         this.reject(
           `Filtered or AI/cartoon image not allowed (detected: ${stage2.forbiddenLabelsDetected.join(', ')})`,
         );
       }
-      if (!stage2.hasPhotographicPersonHints) {
+
+      // نرفض الواقعية المصقولة: TooSmooth + مفيش دلائل فوتوغرافية قوية
+      if (!stage2.hasStrongPhotoHints) {
         this.reject(
-          'Image does not appear to be a clear photograph of a person',
+          'Image appears synthetic/overly smooth and lacks clear photographic indicators',
         );
       }
 
@@ -92,20 +100,19 @@ export class FileUploadValidationService {
     }
   }
 
-  // ----------------- الدفعة الأولى -----------------
+  // ===================== Stage 1 =====================
   private async runStage1(buffer: Buffer): Promise<Stage1Result> {
-    // نشغّل 3 فحوصات بالتوازي
     const [local, faceSafe] = await Promise.all([
       this.analyzeImageBasics(buffer),
       this.annotateFaceAndSafe(buffer),
     ]);
 
-    // تحليل نتائج FACE
     const faces = faceSafe.faceAnnotations ?? [];
     let faceTooSmall = false;
     let faceFrontal = true;
     let faceConfident = true;
     let faceBox: Stage1Result['faceBox'];
+    let sunglassesLikely = false;
 
     if (faces.length === 1) {
       const f = faces[0];
@@ -137,35 +144,58 @@ export class FileUploadValidationService {
         );
         const w = Math.max(0, x1 - x0);
         const h = Math.max(0, y1 - y0);
-        if (w < 100 || h < 100) faceTooSmall = true;
+        // 👇 حجم وجه أشد
+        if (w < 140 || h < 140) faceTooSmall = true;
         faceBox = { x: x0, y: y0, w, h };
       }
 
+      // 👇 تشديد الزوايا
       const pan = f.panAngle ?? 0;
       const tilt = f.tiltAngle ?? 0;
       const roll = f.rollAngle ?? 0;
-      if (Math.abs(pan) > 20 || Math.abs(tilt) > 20 || Math.abs(roll) > 20)
+      if (Math.abs(pan) > 15 || Math.abs(tilt) > 15 || Math.abs(roll) > 15)
         faceFrontal = false;
 
       const conf = f.detectionConfidence ?? 0;
-      if (conf < 0.5) faceConfident = false;
+      if (conf < 0.6) faceConfident = false;
+
+      // 👇 قياس سطوع العينين (patch صغير، سريع)
+      try {
+        const eyeLM = f.landmarks || [];
+        const left = eyeLM.find((l) =>
+          (l.type || '').toString().includes('LEFT_EYE'),
+        );
+        const right = eyeLM.find((l) =>
+          (l.type || '').toString().includes('RIGHT_EYE'),
+        );
+        if (left?.position && right?.position) {
+          const eyeBrightness = await this.measureEyesBrightness(
+            buffer,
+            left.position,
+            right.position,
+          );
+          // عتبات عملية للنظارة الداكنة
+          if (eyeBrightness.mean < 0.2 && eyeBrightness.diff < 0.1) {
+            sunglassesLikely = true;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     }
 
-    // SafeSearch spoof
     const spoofValue = this.asLikelihoodString(
       faceSafe.safeSearchAnnotation?.spoof as any,
     );
     const spoofVeryLikely = spoofValue === 'VERY_LIKELY';
 
-    // حدّية القرار؟ (يستدعي الدفعة الثانية)
+    // Borderline = ثقة وجه حدّية أو spoof محتمل/مرجّح (لكن مش VERY_LIKELY)
     const borderline =
-      // ثقة الوجه عند الحد الأدنى
       (faces.length === 1 &&
         !faceTooSmall &&
         faceFrontal &&
         !spoofVeryLikely &&
-        (faces[0]?.detectionConfidence ?? 0) < 0.7) ||
-      // spoof محتمل/مرجّح بس مش VERY_LIKELY
+        (faces[0]?.detectionConfidence ?? 0) < 0.75) ||
       spoofValue === 'POSSIBLE' ||
       spoofValue === 'LIKELY';
 
@@ -179,6 +209,7 @@ export class FileUploadValidationService {
       localValid: local.valid,
       localReason: local.reason,
       borderline,
+      sunglassesLikely,
     };
   }
 
@@ -198,15 +229,12 @@ export class FileUploadValidationService {
     }
   }
 
-  // ----------------- الدفعة الثانية -----------------
+  // ===================== Stage 2 =====================
   private async runStage2(
     buffer: Buffer,
     faceBox?: { x: number; y: number; w: number; h: number },
   ): Promise<Stage2Result> {
-    // نجهّز صورة مقصوصة اختيارية للـ Labels لتقليل الحجم (لا يؤثر على الصورة المحفوظة)
     const labelInputBuffer = await this.prepareLabelInput(buffer, faceBox);
-
-    // نشغّل 3 فحوصات بالتوازي داخل الدفعة الثانية
     const [labels] = await Promise.all([
       this.annotateLabels(labelInputBuffer, 10),
     ]);
@@ -225,29 +253,60 @@ export class FileUploadValidationService {
       'anime',
       'comic',
       'manga',
-      'art',
-      'painting',
       'artwork',
-      'caricature',
-      'doodle',
+      'painting',
+      'digital art',
+      'fantasy art',
+      'concept art',
+      'matte painting',
+      'airbrushed',
+      'render',
+      '3d render',
+      'octane render',
+      'unreal engine',
+      'cgi',
+      'computer graphics',
+      'cg',
+      'synthetic',
+      'ai-generated',
+      'generative',
+      'stable diffusion',
+      'midjourney',
       'graphic design',
     ];
     const forbiddenLabelsDetected = labelsList.filter((l) =>
       forbiddenLabels.some((f) => l.includes(f)),
     );
 
-    const qualityLabels = [
+    const personHints = [
       'person',
+      'human',
       'human face',
       'portrait',
+      'headshot',
       'selfie',
-      'photograph',
+      'facial feature',
     ];
     const hasPhotographicPersonHints = labelsList.some((l) =>
-      qualityLabels.some((q) => l.includes(q)),
+      personHints.some((q) => l.includes(q)),
     );
 
-    return { forbiddenLabelsDetected, hasPhotographicPersonHints };
+    const strongPhotoHints = [
+      'photograph',
+      'photo',
+      'camera',
+      'snapshot',
+      'dslr',
+    ];
+    const hasStrongPhotoHints = labelsList.some((l) =>
+      strongPhotoHints.some((q) => l.includes(q)),
+    );
+
+    return {
+      forbiddenLabelsDetected,
+      hasPhotographicPersonHints,
+      hasStrongPhotoHints,
+    };
   }
 
   private async annotateLabels(buffer: Buffer, maxResults = 10) {
@@ -268,9 +327,7 @@ export class FileUploadValidationService {
     faceBox?: { x: number; y: number; w: number; h: number },
   ): Promise<Buffer> {
     try {
-      if (!faceBox) return buffer; // لو مفيش صندوق وجه من الدفعة الأولى
-
-      // نضيف حواف حوالين الوجه (20%) ونقصّ ROI
+      if (!faceBox) return buffer;
       const meta = await sharp(buffer).metadata();
       const pad = 0.2;
       const x = Math.max(0, Math.floor(faceBox.x - faceBox.w * pad));
@@ -292,12 +349,11 @@ export class FileUploadValidationService {
       }
       return buffer;
     } catch {
-      // لو القص فشل لأي سبب، نرجع الأصل
       return buffer;
     }
   }
 
-  // ----------------- فحوصات محليّة -----------------
+  // ===================== Local checks =====================
   private async analyzeImageBasics(
     buffer: Buffer,
   ): Promise<{ valid: boolean; reason?: string }> {
@@ -350,12 +406,10 @@ export class FileUploadValidationService {
         .greyscale()
         .resize(300, 300, { fit: 'inside' })
         .stats();
-
       const totalStdev = stats.channels.reduce(
         (sum, c) => sum + (c.stdev ?? 0),
         0,
       );
-      // حد ضبط افتراضي—يمكن تعديله حسب بياناتك
       return { sharp: totalStdev > 30 };
     } catch (e) {
       console.error('Sharpness check error:', e);
@@ -363,7 +417,61 @@ export class FileUploadValidationService {
     }
   }
 
-  // ----------------- أدوات مساعدة -----------------
+  // ===== نعومة (AI) — تُشغّل فقط لو الحالة حدّية =====
+  private async checkAIsmoothness(
+    buffer: Buffer,
+  ): Promise<{ tooSmooth: boolean }> {
+    try {
+      const laplacianKernel = {
+        width: 3,
+        height: 3,
+        kernel: [0, -1, 0, -1, 4, -1, 0, -1, 0],
+      };
+      const processed = await sharp(buffer)
+        .greyscale()
+        .resize(192, 192, { fit: 'inside' }) // أصغر = أسرع
+        .convolve(laplacianKernel)
+        .stats();
+      const edgeEnergy = processed.channels.reduce(
+        (s, ch) => s + (ch.stdev ?? 0),
+        0,
+      );
+      // خففنا التكلفة وخلّينا العتبة معتدلة لتقليل استدعاء Stage2 على الصور الحقيقية
+      const tooSmooth = edgeEnergy < 16;
+      return { tooSmooth };
+    } catch {
+      return { tooSmooth: false };
+    }
+  }
+
+  // ===== قياس سطوع العينين (مؤشر نظّارة) =====
+  private async measureEyesBrightness(
+    buffer: Buffer,
+    left: { x?: number; y?: number; z?: number },
+    right: { x?: number; y?: number; z?: number },
+  ): Promise<{ mean: number; diff: number }> {
+    const sampleBox = async (cx: number, cy: number, size = 24) => {
+      const left = Math.max(0, Math.floor(cx - size / 2));
+      const top = Math.max(0, Math.floor(cy - size / 2));
+      const img = sharp(buffer)
+        .extract({ left, top, width: size, height: size })
+        .greyscale();
+      const st = await img.stats();
+      return (st.channels[0]?.mean ?? 128) / 255;
+    };
+
+    const lx = Math.max(0, Math.floor(left.x ?? 0));
+    const ly = Math.max(0, Math.floor(left.y ?? 0));
+    const rx = Math.max(0, Math.floor(right.x ?? 0));
+    const ry = Math.max(0, Math.floor(right.y ?? 0));
+
+    const [lb, rb] = await Promise.all([sampleBox(lx, ly), sampleBox(rx, ry)]);
+    const mean = (lb + rb) / 2;
+    const diff = Math.abs(lb - rb);
+    return { mean, diff };
+  }
+
+  // ===================== Helpers =====================
   private asLikelihoodString(
     val: number | string | undefined,
   ): string | undefined {
