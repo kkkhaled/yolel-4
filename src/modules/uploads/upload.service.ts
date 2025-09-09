@@ -398,6 +398,7 @@ export class UploadService {
     try {
       const result = await this.deletedImage
         .find()
+        .populate('deletedBy')
         .skip((page - 1) * pageSize)
         .limit(pageSize);
 
