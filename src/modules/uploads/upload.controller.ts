@@ -113,15 +113,15 @@ export class UploadController {
 
     try {
       // التحقق من صحة الصورة
-      const fileBuffer = fs.readFileSync(uploadedFile.path);
-      const start = process.hrtime();
+      // const fileBuffer = fs.readFileSync(uploadedFile.path);
+      // const start = process.hrtime();
 
-      const validationResult =
-        await this.fileValidationService.validatePhoto(fileBuffer);
+      // const validationResult =
+      //   await this.fileValidationService.validatePhoto(fileBuffer);
 
-      // ⏱️ stop timer
-      const diff = process.hrtime(start);
-      const validationMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(2);
+      // // ⏱️ stop timer
+      // const diff = process.hrtime(start);
+      // const validationMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(2);
       // ✅ الصورة صحيحة - حفظ في uploads
       const createUploadDto: CreateUploadDto = {
         imageUrl,
