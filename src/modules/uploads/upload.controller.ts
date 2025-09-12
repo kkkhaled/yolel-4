@@ -136,6 +136,7 @@ export class UploadController {
       const result = await this.uploadService.create(createUploadDto);
       return {
         message: 'Image uploaded successfully ✅',
+        userPoints: result?.userPoints,
       };
     } catch (error) {
       let refusalReason = 'Photo validation failed';
