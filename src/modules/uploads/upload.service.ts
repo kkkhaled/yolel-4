@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model, Types } from 'mongoose';
+import mongoose, { Model, Mongoose, Types } from 'mongoose';
 import { Upload } from '../../schema/uploadSchema';
 import { Vote } from '../../schema/voteSchema';
 import { CreateUploadDto } from './dto/create-upload.dto';
@@ -12,6 +12,7 @@ import { DeletedImage } from 'src/schema/deleted-images';
 import { computeLevel } from './utils/uplaod.util';
 import { GetUploadsByUserLevelsDto } from './dto/get-user-levels-uplaods.dto';
 import { RefusedImages } from 'src/schema/refused-images';
+import { User } from 'src/schema/userSchema';
 
 @Injectable()
 export class UploadService {
@@ -20,6 +21,7 @@ export class UploadService {
     @InjectModel(Vote.name) private voteModel: Model<Upload>,
     @InjectModel(SharedUploads.name) private sharedUpload: Model<SharedUploads>,
     @InjectModel(Report.name) private reportModel: Model<Report>,
+    @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(DeletedUploads.name)
     private deletedUploads: Model<DeletedUploads>,
     @InjectModel(DeletedImage.name)
@@ -263,7 +265,22 @@ export class UploadService {
 
   async create(createUploadDto: CreateUploadDto) {
     const createdUpload = new this.uploadModel(createUploadDto);
-    return createdUpload.save();
+    let savedUpload: any = createdUpload.save();
+    const user = await this.userModel.findById(
+      new Types.ObjectId(createUploadDto.user),
+    );
+
+    // update user points
+    const updatedUser = await this.userModel.findByIdAndUpdate(user.id, {
+      userPoints: user?.userPoints - 100,
+    });
+    const userPoints = updatedUser.userPoints;
+    savedUpload = {
+      ...savedUpload,
+      userPoints,
+    };
+
+    return savedUpload;
   }
 
   async createRefusedImage(data: {
