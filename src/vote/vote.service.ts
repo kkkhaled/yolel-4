@@ -349,7 +349,7 @@ export class VotesService {
         (userChoice === 'imageTwo' && isImageTwoStronger)
       ) {
         user.userPoints += 1;
-      } else if (imageOneVotesBefore === imageTwoVotesBefore) {
+      } else if (userChoice && imageOneVotesBefore === imageTwoVotesBefore) {
         user.userPoints += 1;
       } else {
         user.userPoints -= 1;
