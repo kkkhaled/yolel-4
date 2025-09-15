@@ -345,12 +345,11 @@ export class VotesService {
       const isImageTwoStronger = imageTwoVotesBefore > imageOneVotesBefore;
 
       if (
-        (userChoice === 'imageOne' &&
-          (isImageOneStronger ||
-            imageOneVotesBefore === imageTwoVotesBefore)) ||
-        (userChoice === 'imageTwo' &&
-          (isImageTwoStronger || imageOneVotesBefore === imageTwoVotesBefore))
+        (userChoice === 'imageOne' && isImageOneStronger) ||
+        (userChoice === 'imageTwo' && isImageTwoStronger)
       ) {
+        user.userPoints += 1;
+      } else if (imageOneVotesBefore === imageTwoVotesBefore) {
         user.userPoints += 1;
       } else {
         user.userPoints -= 1;
