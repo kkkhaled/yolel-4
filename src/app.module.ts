@@ -46,7 +46,7 @@ dotenv.config();
       envFilePath: '.env',
       isGlobal: true,
     }),
-    MongooseModule.forRoot(process.env.DATABASE_URLL),
+    MongooseModule.forRoot(process.env.DATABASE_URL),
     CqrsModule,
     AuthModule,
     VoteModule,
