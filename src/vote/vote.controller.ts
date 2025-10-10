@@ -89,6 +89,7 @@ export class VotesController {
       userId: req.user.id,
       page: query.page,
       limit: query.limit,
+      uploadId: query?.uploadId,
       sortOrder: query.sortOrder,
     });
   }

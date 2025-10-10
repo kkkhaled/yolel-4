@@ -14,6 +14,7 @@ import {
   UploadedFiles,
   HttpException,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { UploadService } from './upload.service';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
@@ -257,8 +258,31 @@ export class UploadController {
         includeSelf: query.includeSelf,
         sort: query.sort,
         order: query.order,
+        uploadId: query?.uploadId,
       },
       req.user.id,
+    );
+  }
+
+  @Get('search-by-percentage-range')
+  @UseGuards(JwtAuthGuard) // Add if authentication is required, remove if not
+  async searchUploadsByPercentageRange(
+    @Query('fromPercentage') fromPercentage: string,
+    @Query('toPercentage') toPercentage: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+  ) {
+    // Parse and validate query parameters
+    const from = parseFloat(fromPercentage);
+    const to = parseFloat(toPercentage);
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+
+    return this.uploadService.searchUploadsByPercentageRange(
+      from,
+      to,
+      pageNum,
+      limitNum,
     );
   }
 

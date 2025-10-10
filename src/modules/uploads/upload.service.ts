@@ -263,6 +263,104 @@ export class UploadService {
     }
   }
 
+  async searchUploadsByPercentageRange(
+    fromPercentage: number,
+    toPercentage: number,
+    page: number,
+    limit: number,
+  ) {
+    try {
+      // Validate percentage ranges
+      if (fromPercentage < 0 || fromPercentage > 100) {
+        throw new BadRequestException(
+          'fromPercentage must be between 0 and 100',
+        );
+      }
+      if (toPercentage < 0 || toPercentage > 100) {
+        throw new BadRequestException('toPercentage must be between 0 and 100');
+      }
+      if (fromPercentage > toPercentage) {
+        throw new BadRequestException(
+          'fromPercentage cannot be greater than toPercentage',
+        );
+      }
+
+      // Special case: if both are 0, find uploads with no InteractedVotes
+      if (fromPercentage === 0 && toPercentage === 0) {
+        const total = await this.uploadModel.countDocuments({
+          InteractedVotes: { $size: 0 },
+        });
+
+        const uploads = await this.uploadModel
+          .find({ InteractedVotes: { $size: 0 } })
+          .skip((page - 1) * limit)
+          .limit(limit);
+
+        return { total, uploads };
+      }
+
+      // Convert percentages to decimal (0-1 range)
+      const minDecimal = fromPercentage / 100;
+      const maxDecimal = toPercentage / 100;
+
+      const filter = {
+        $expr: {
+          $and: [
+            // Must have at least one InteractedVote
+            { $gt: [{ $size: '$InteractedVotes' }, 0] },
+            // Calculate percentage and check if >= fromPercentage
+            {
+              $gte: [
+                {
+                  $divide: [
+                    { $size: '$bestVotes' },
+                    { $size: '$InteractedVotes' },
+                  ],
+                },
+                minDecimal,
+              ],
+            },
+            // Calculate percentage and check if <= toPercentage
+            {
+              $lte: [
+                {
+                  $divide: [
+                    { $size: '$bestVotes' },
+                    { $size: '$InteractedVotes' },
+                  ],
+                },
+                maxDecimal,
+              ],
+            },
+          ],
+        },
+      };
+
+      // Count the total number of matching documents
+      const total = await this.uploadModel.countDocuments(filter);
+
+      // Fetch paginated results
+      const uploads = await this.uploadModel
+        .find(filter)
+        .skip((page - 1) * limit)
+        .limit(limit);
+
+      return {
+        total,
+        uploads,
+        range: {
+          from: fromPercentage,
+          to: toPercentage,
+        },
+      };
+    } catch (error) {
+      console.log(error);
+      throw new BadRequestException(
+        error.message || 'Error searching uploads by percentage range',
+      );
+    }
+  }
+
   async create(createUploadDto: CreateUploadDto) {
     const createdUpload = new this.uploadModel(createUploadDto);
     let savedUpload: any = createdUpload.save();
@@ -429,6 +527,7 @@ export class UploadService {
   async getUploadsByUserLevels(
     params: GetUploadsByUserLevelsDto,
     userId: string,
+    uploadId?: string,
   ) {
     const {
       page = 1,
@@ -441,6 +540,15 @@ export class UploadService {
     const userObjId = new Types.ObjectId(userId);
     const skip = (page - 1) * limit;
     const dir = order === 'asc' ? 1 : -1;
+
+    // Validate uploadId if provided
+    let uploadObjId: Types.ObjectId | null = null;
+    if (uploadId) {
+      if (!Types.ObjectId.isValid(uploadId)) {
+        throw new BadRequestException('Invalid uploadId format.');
+      }
+      uploadObjId = new Types.ObjectId(uploadId);
+    }
 
     const userLevels: number[] = await this.uploadModel.distinct('level', {
       user: userObjId,
@@ -462,6 +570,11 @@ export class UploadService {
     filter.user = { $ne: userObjId };
     if (!includeSelf) filter.user = { $ne: userObjId };
 
+    // Add uploadId filter if provided
+    if (uploadObjId) {
+      filter._id = uploadObjId;
+    }
+
     const total = await this.uploadModel.countDocuments(filter);
 
     const sortSpec: Record<string, 1 | -1> = {};
@@ -480,7 +593,7 @@ export class UploadService {
       limit,
       total,
       totalPages: Math.ceil(total / limit),
-      levels: userLevels, // helpful context for the client
+      levels: userLevels,
       uploads,
     };
   }

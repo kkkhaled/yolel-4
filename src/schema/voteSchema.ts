@@ -25,6 +25,8 @@ export class Vote extends Document {
   @Prop({ enum: AgeType })
   ageType: AgeType;
 
+  @Prop({ default: 0, type: Number })
+  numberOfVotes: number;
 }
 
 export const VoteSchema = SchemaFactory.createForClass(Vote);

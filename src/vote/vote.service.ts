@@ -245,7 +245,7 @@ export class VotesService {
           path: 'imageTwo',
           select: 'imageUrl user',
         })
-        .sort({ voteEnhancementCount: -1, createdAt: -1 });
+        .sort({ numberOfVotes: 1, createdAt: -1 });
 
       // Filter the votes array
       const filteredVotes = votes.filter((vote) => {
@@ -516,17 +516,33 @@ export class VotesService {
 
   async findByUserVotesSortedByOwnUploadId(params: {
     userId: string;
+    uploadId?: string;
     page?: number;
     limit?: number;
     sortOrder?: 'asc' | 'desc';
   }) {
-    const { userId, page = 1, limit = 10, sortOrder = 'asc' } = params;
+    const {
+      userId,
+      uploadId,
+      page = 1,
+      limit = 10,
+      sortOrder = 'asc',
+    } = params;
 
     // Validate userId early
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid userId format.');
     }
     const userObjectId = new Types.ObjectId(userId);
+
+    // Validate uploadId if provided
+    let uploadObjectId: Types.ObjectId | null = null;
+    if (uploadId) {
+      if (!Types.ObjectId.isValid(uploadId)) {
+        throw new BadRequestException('Invalid uploadId format.');
+      }
+      uploadObjectId = new Types.ObjectId(uploadId);
+    }
 
     const skip = (page - 1) * limit;
     const dir = sortOrder === 'asc' ? 1 : -1;
@@ -536,16 +552,30 @@ export class VotesService {
       $convert: {
         input: expr,
         to: 'objectId',
-        onError: expr, // if already ObjectId or not convertible, keep as is
+        onError: expr,
         onNull: null,
       },
     });
 
     const pipeline: any[] = [
+      // Filter by uploadId early if provided (before lookups for better performance)
+      ...(uploadObjectId
+        ? [
+            {
+              $match: {
+                $or: [
+                  { imageOne: uploadObjectId },
+                  { imageTwo: uploadObjectId },
+                ],
+              },
+            },
+          ]
+        : []),
+
       // Join upload docs for imageOne
       {
         $lookup: {
-          from: 'uploads', // ensure this matches your actual collection name
+          from: 'uploads',
           localField: 'imageOne',
           foreignField: '_id',
           as: 'imageOneDoc',
@@ -593,13 +623,12 @@ export class VotesService {
 
       // Keep only votes related to this user
       { $match: { ownUploadId: { $ne: null } } },
+      { $match: { score: { $gt: 0 } } },
 
       // Decide if we need to swap so that imageOne is always the user's image
       {
         $addFields: {
           needsSwap: { $ne: ['$imageOneUserId', userObjectId] },
-
-          // Keep originals to swap cleanly
           originalImageOne: '$imageOne',
           originalImageTwo: '$imageTwo',
           originalImageOneDoc: '$imageOneDoc',
@@ -649,10 +678,8 @@ export class VotesService {
         },
       },
 
-      // Include the fields you want to return (no exclusions here, except optional _id)
       {
         $project: {
-          // _id: 0, // uncomment if you want to hide _id
           imageOne: 1,
           imageTwo: 1,
           imageOneVoteNumber: 1,
@@ -665,10 +692,10 @@ export class VotesService {
           imageOneDoc: 1,
           imageTwoDoc: 1,
           ownUploadId: 1,
+          score: 1,
         },
       },
 
-      // Remove temp fields to avoid mixing inclusion/exclusion in the same $project
       {
         $unset: [
           'needsSwap',
@@ -683,10 +710,8 @@ export class VotesService {
         ],
       },
 
-      // Sort by user's upload id (asc/desc) and tie-break by createdAt desc
       { $sort: { ownUploadId: dir, createdAt: -1 } },
 
-      // Pagination + total count
       {
         $facet: {
           data: [{ $skip: skip }, { $limit: limit }],

@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsPositive,
   IsBoolean,
+  IsString,
 } from 'class-validator';
 
 export class GetUploadsByUserLevelsDto {
@@ -19,6 +20,10 @@ export class GetUploadsByUserLevelsDto {
   @IsInt()
   @IsPositive()
   limit?: number = 20;
+
+  @IsOptional()
+  @IsString()
+  uploadId?: string;
 
   // Accepts true/false or "true"/"false" in querystring
   @IsOptional()

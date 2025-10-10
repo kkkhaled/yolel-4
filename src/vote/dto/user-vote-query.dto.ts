@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsPositive } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsPositive, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class GetUserVotesQueryDto {
@@ -13,6 +13,10 @@ export class GetUserVotesQueryDto {
   @IsInt()
   @IsPositive()
   limit?: number = 10;
+
+  @IsString()
+  @IsOptional()
+  uploadId?: string;
 
   @IsOptional()
   @IsIn(['asc', 'desc'])
