@@ -47,7 +47,7 @@ dotenv.config();
       envFilePath: '.env',
       isGlobal: true,
     }),
-    MongooseModule.forRoot(process.env.DATABASE_URL),
+    MongooseModule.forRoot(process.env.DATABASE_URLL),
     // MongooseModule.forRootAsync({
     //   useFactory: async (): Promise<MongooseModuleOptions> => {
     //     const uri = process.env.DATABASE_URL;

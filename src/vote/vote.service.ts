@@ -318,6 +318,8 @@ export class VotesService {
         throw new Error('Invalid user choice');
       }
 
+      vote.numberOfVotes += 1;
+
       // Save vote counts BEFORE user's choice
       const imageOneVotesBefore = vote.imageOneVoteNumber;
       const imageTwoVotesBefore = vote.imageTwoVoteNumber;

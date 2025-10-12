@@ -117,8 +117,8 @@ export class UploadController {
       const fileBuffer = fs.readFileSync(uploadedFile.path);
       const start = process.hrtime();
 
-      const validationResult =
-        await this.fileValidationService.validatePhoto(fileBuffer);
+      // const validationResult =
+      //   await this.fileValidationService.validatePhoto(fileBuffer);
 
       // ⏱️ stop timer
       const diff = process.hrtime(start);
