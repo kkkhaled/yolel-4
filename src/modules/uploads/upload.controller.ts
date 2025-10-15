@@ -5,7 +5,6 @@ import {
   Post,
   UseGuards,
   UseInterceptors,
-  UploadedFile,
   Body,
   Req,
   Put,
@@ -264,19 +263,44 @@ export class UploadController {
     );
   }
 
-  @Get('search-by-percentage-range')
-  @UseGuards(JwtAuthGuard) // Add if authentication is required, remove if not
+  @Get('filter/search-by-percentage-range')
+  @UseGuards(JwtAuthGuard)
   async searchUploadsByPercentageRange(
-    @Query('fromPercentage') fromPercentage: string,
-    @Query('toPercentage') toPercentage: string,
+    @Query('fromPercentage') fromPercentage?: string,
+    @Query('toPercentage') toPercentage?: string,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
   ) {
-    // Parse and validate query parameters
-    const from = parseFloat(fromPercentage);
-    const to = parseFloat(toPercentage);
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    const from = Number(fromPercentage);
+    const to = Number(toPercentage);
+    const pageNum = Number.parseInt(page, 10);
+    const limitNum = Number.parseInt(limit, 10);
+
+    // Basic validation
+    if (!Number.isFinite(from) || !Number.isFinite(to)) {
+      throw new BadRequestException(
+        'fromPercentage and toPercentage are required numbers',
+      );
+    }
+    if (from < 0 || from > 100) {
+      throw new BadRequestException('fromPercentage must be between 0 and 100');
+    }
+    if (to < 0 || to > 100) {
+      throw new BadRequestException('toPercentage must be between 0 and 100');
+    }
+    if (from > to) {
+      throw new BadRequestException(
+        'fromPercentage cannot be greater than toPercentage',
+      );
+    }
+    if (!Number.isFinite(pageNum) || pageNum < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+    if (!Number.isFinite(limitNum) || limitNum < 1 || limitNum > 1000) {
+      throw new BadRequestException(
+        'limit must be an integer between 1 and 1000',
+      );
+    }
 
     return this.uploadService.searchUploadsByPercentageRange(
       from,

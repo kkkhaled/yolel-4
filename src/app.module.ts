@@ -22,7 +22,6 @@ import { SharedUploadModule } from './modules/shared-uploads/shared-upload.modul
 import { StaticsModule } from './modules/statics/statics.module';
 import { AssetModule } from './modules/asset/asset.module';
 import { PreviewModule } from './modules/preview/previw.module';
-import { MongoClient } from 'mongodb';
 
 // Load environment variables
 dotenv.config();
