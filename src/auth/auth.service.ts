@@ -48,6 +48,7 @@ export class AuthService {
       const newUser = await this.user.create({
         deviceToken: deviceToken,
         notificationToken: notificationToken || '',
+        userPoints: 1000,
       });
 
       const token = this.jwtService.sign({ id: newUser._id });
@@ -81,7 +82,7 @@ export class AuthService {
 
     const token = this.jwtService.sign({ id: user._id });
 
-    return { token , role : user.role };
+    return { token, role: user.role };
   }
 
   // get user data
