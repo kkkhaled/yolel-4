@@ -305,9 +305,10 @@ export class VotesService {
   // update
   async updateVote(userChoice: string, voteId: string, userId: string) {
     try {
-      const vote = await this.voteModel.findById(voteId);
-      // .populate('imageOne')
-      // .populate('imageTwo');
+      const vote = await this.voteModel
+        .findById(voteId)
+        .populate('imageOne')
+        .populate('imageTwo');
 
       if (!vote) {
         throw new Error('Vote not found');
