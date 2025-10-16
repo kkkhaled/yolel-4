@@ -305,10 +305,9 @@ export class VotesService {
   // update
   async updateVote(userChoice: string, voteId: string, userId: string) {
     try {
-      const vote = await this.voteModel
-        .findById(voteId)
-        .populate('imageOne')
-        .populate('imageTwo');
+      const vote = await this.voteModel.findById(voteId);
+      // .populate('imageOne')
+      // .populate('imageTwo');
 
       if (!vote) {
         throw new Error('Vote not found');
@@ -321,8 +320,6 @@ export class VotesService {
       vote.numberOfVotes += 1;
 
       // Save vote counts BEFORE user's choice
-      const imageOneVotesBefore = vote.imageOneVoteNumber;
-      const imageTwoVotesBefore = vote.imageTwoVoteNumber;
 
       // Update vote count
       if (userChoice === 'imageOne') {
@@ -343,6 +340,12 @@ export class VotesService {
         throw new Error('User not found');
       }
 
+      this.updateBestAndWorstVotes(vote);
+      const result = await vote.save();
+
+      const imageOneVotesBefore = result.imageOneVoteNumber;
+      const imageTwoVotesBefore = result.imageTwoVoteNumber;
+
       const isImageOneStronger = imageOneVotesBefore > imageTwoVotesBefore;
       const isImageTwoStronger = imageTwoVotesBefore > imageOneVotesBefore;
 
@@ -358,9 +361,6 @@ export class VotesService {
       }
 
       await user.save();
-
-      this.updateBestAndWorstVotes(vote);
-      const result = await vote.save();
 
       await this.updateUploadsWithInteractedVote(vote?.imageOne?.id, vote.id);
       await this.updateUploadsWithInteractedVote(vote?.imageTwo?.id, vote.id);
