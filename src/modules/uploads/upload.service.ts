@@ -533,7 +533,7 @@ export class UploadService {
       page = 1,
       limit = 20,
       includeSelf = true,
-      sort = 'level',
+      sort = 'levelPercentage',
       order = 'desc',
     } = params;
 
@@ -550,10 +550,13 @@ export class UploadService {
       uploadObjId = new Types.ObjectId(uploadId);
     }
 
-    const userLevels: number[] = await this.uploadModel.distinct('level', {
-      user: userObjId,
-      level: { $ne: null },
-    });
+    const userLevels: number[] = await this.uploadModel.distinct(
+      'levelPercentage',
+      {
+        user: userObjId,
+        level: { $ne: null },
+      },
+    );
 
     if (!userLevels.length) {
       return {
@@ -613,5 +616,44 @@ export class UploadService {
 
       await this.uploadModel.updateOne({ _id: u._id }, { $set: { level } });
     }
+  }
+
+  async recomputeAll(): Promise<{ matched: number; modified: number }> {
+    const res = await this.uploadModel.updateMany(
+      {},
+      [
+        {
+          $set: {
+            levelPercentage: {
+              $cond: [
+                { $gt: [{ $size: { $ifNull: ['$InteractedVotes', []] } }, 0] },
+                {
+                  $round: [
+                    {
+                      $multiply: [
+                        {
+                          $divide: [
+                            { $size: { $ifNull: ['$bestVotes', []] } },
+                            { $size: { $ifNull: ['$InteractedVotes', []] } },
+                          ],
+                        },
+                        100,
+                      ],
+                    },
+                    2,
+                  ],
+                },
+                0,
+              ],
+            },
+          },
+        },
+      ],
+      { strict: false },
+    );
+
+    const matched = (res as any).matchedCount ?? (res as any).n ?? 0;
+    const modified = (res as any).modifiedCount ?? (res as any).nModified ?? 0;
+    return { matched, modified };
   }
 }

@@ -379,16 +379,30 @@ export class VotesService {
     for (const imageId of imageIds.filter((id) => id)) {
       const upload = await this.uploadModel
         .findById(imageId, 'bestVotes InteractedVotes')
+
         .lean();
       if (!upload) continue;
 
       const bestCount = upload.bestVotes?.length || 0;
       const interactedCount = upload.InteractedVotes?.length || 0;
       const newLevel = computeLevel(bestCount, interactedCount);
-
-      await this.uploadModel.updateOne({ _id: imageId }, { level: newLevel });
+      const levelPercentage = this.computeLevelPercentage(
+        bestCount,
+        interactedCount,
+      );
+      await this.uploadModel.updateOne(
+        { _id: imageId },
+        { level: newLevel, levelPercentage },
+      );
     }
   }
+
+  computeLevelPercentage(best: number, interacted: number): number {
+    if (!interacted) return 0;
+    // keep 2 decimals as a Number (not string)
+    return Math.round((best * 10000) / interacted) / 100; // 72.34
+  }
+
   // for update votes images (interacted votes) after update vote
   async updateUploadsWithInteractedVote(
     uploadId: mongoose.Types.ObjectId,

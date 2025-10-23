@@ -49,8 +49,12 @@ export class Upload extends Document {
 
   @Prop({ type: Number, min: 1, max: 10, index: true })
   level?: number;
+
+  @Prop({ type: Number, default: 0, index: true })
+  levelPercentage: number;
 }
 
 export const UploadSchema = SchemaFactory.createForClass(Upload);
 UploadSchema.index({ user: 1 });
 UploadSchema.index({ level: 1, user: 1 });
+UploadSchema.index({ levelPercentage: -1 });

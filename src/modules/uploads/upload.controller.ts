@@ -314,4 +314,15 @@ export class UploadController {
   async migrate() {
     return await this.uploadService.migrateUploadLevels();
   }
+
+  @Post('upload-level-percentage')
+  async run(@Query('confirm') confirm?: string) {
+    if (confirm !== 'yes') {
+      throw new BadRequestException(
+        'Run with ?confirm=yes to execute. | أعد الطلب مع ?confirm=yes للتنفيذ.',
+      );
+    }
+    const { matched, modified } = await this.uploadService.recomputeAll();
+    return { success: true, matched, modified };
+  }
 }
