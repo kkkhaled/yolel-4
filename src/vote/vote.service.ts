@@ -762,4 +762,96 @@ export class VotesService {
       throw new InternalServerErrorException('Unable to fetch votes.');
     }
   }
+
+  async findComparisonsByUploadId(params: {
+    uploadId: string;
+    page?: number;
+    limit?: number;
+    sortOrder?: 'asc' | 'desc';
+    normalizeTargetFirst?: boolean; // when true, ensures the target upload is always imageOne
+  }) {
+    const {
+      uploadId,
+      page = 1,
+      limit = 10,
+      sortOrder = 'desc',
+      normalizeTargetFirst = true,
+    } = params;
+
+    // Validate uploadId
+    if (!Types.ObjectId.isValid(uploadId)) {
+      throw new BadRequestException('Invalid uploadId format.');
+    }
+    const uploadObjectId = new Types.ObjectId(uploadId);
+
+    const skip = (page - 1) * limit;
+    const dir: 1 | -1 = sortOrder === 'asc' ? 1 : -1;
+
+    // Build query: any vote where this image appears on either side
+    const query = {
+      $or: [{ imageOne: uploadObjectId }, { imageTwo: uploadObjectId }],
+      interactedUsers: { $exists: true, $not: { $size: 0 } },
+    };
+
+    // Count total first
+    const total = await this.voteModel.countDocuments(query);
+
+    // Fetch comparisons with both uploads populated
+    const votes = await this.voteModel
+      .find(query)
+      .sort({ createdAt: dir, _id: dir }) // stable secondary sort
+      .skip(skip)
+      .limit(limit)
+      .populate('imageOne')
+      .populate('imageTwo')
+      .lean();
+
+    // Optionally normalize: ensure the target upload is always imageOne
+    const data = normalizeTargetFirst
+      ? votes.map((v) => {
+          const isTargetOnOne =
+            v.imageOne && String(v.imageOne._id) === String(uploadObjectId);
+          if (isTargetOnOne) {
+            return {
+              ...v,
+              targetPosition: 'imageOne' as const,
+              targetUpload: v.imageOne,
+              opponentUpload: v.imageTwo,
+            };
+          }
+          // swap fields when the target is imageTwo
+          return {
+            ...v,
+            imageOne: v.imageTwo,
+            imageTwo: v.imageOne,
+            imageOneVoteNumber: v.imageTwoVoteNumber,
+            imageTwoVoteNumber: v.imageOneVoteNumber,
+            targetPosition: 'imageOne' as const,
+            targetUpload: v.imageTwo,
+            opponentUpload: v.imageOne,
+          };
+        })
+      : votes.map((v) => {
+          const targetPosition =
+            v.imageOne && String(v.imageOne._id) === String(uploadObjectId)
+              ? 'imageOne'
+              : 'imageTwo';
+          return {
+            ...v,
+            targetPosition,
+            targetUpload:
+              targetPosition === 'imageOne' ? v.imageOne : v.imageTwo,
+            opponentUpload:
+              targetPosition === 'imageOne' ? v.imageTwo : v.imageOne,
+          };
+        });
+
+    return {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      data,
+    };
+  }
 }

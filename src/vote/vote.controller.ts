@@ -84,13 +84,11 @@ export class VotesController {
   @Get('ordered/user')
   @UseGuards(JwtAuthGuard, UserRoleGuard)
   @Roles('user')
-  async getVotesForUser(@Query() query: GetUserVotesQueryDto, @Req() req) {
-    return this.votesService.findByUserVotesSortedByOwnUploadId({
-      userId: req.user.id,
+  async getVotesForUser(@Query() query: GetUserVotesQueryDto): Promise<any> {
+    return await this.votesService.findComparisonsByUploadId({
+      uploadId: query.uploadId,
       page: query.page,
       limit: query.limit,
-      uploadId: query?.uploadId,
-      sortOrder: query.sortOrder,
     });
   }
 }

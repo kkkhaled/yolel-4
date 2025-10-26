@@ -250,17 +250,11 @@ export class UploadController {
   @UseGuards(JwtAuthGuard, UserRoleGuard)
   @Roles('user')
   async getByUserLevels(@Query() query: GetUploadsByUserLevelsDto, @Req() req) {
-    return this.uploadService.getUploadsByUserLevels(
-      {
-        page: query.page,
-        limit: query.limit,
-        includeSelf: query.includeSelf,
-        sort: query.sort,
-        order: query.order,
-        uploadId: query?.uploadId,
-      },
-      req.user.id,
-    );
+    return this.uploadService.getUploadsByUploadLevel({
+      page: query.page,
+      limit: query.limit,
+      uploadId: query?.uploadId,
+    });
   }
 
   @Get('filter/search-by-percentage-range')

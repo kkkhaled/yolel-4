@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Mongoose, Types } from 'mongoose';
 import { Upload } from '../../schema/uploadSchema';
@@ -524,70 +528,68 @@ export class UploadService {
     }
   }
 
-  async getUploadsByUserLevels(
-    params: GetUploadsByUserLevelsDto,
-    userId: string,
-    uploadId?: string,
-  ) {
-    const {
-      page = 1,
-      limit = 20,
-      includeSelf = true,
-      sort = 'levelPercentage',
-      order = 'desc',
-    } = params;
+  // service
+  async getUploadsByUploadLevel(params: {
+    page?: number;
+    limit?: number;
+    userId?: string;
+    uploadId: string;
+  }) {
+    const { page = 1, limit = 20, uploadId } = params;
 
-    const userObjId = new Types.ObjectId(userId);
+    const uploadObjId = new Types.ObjectId(uploadId);
+
     const skip = (page - 1) * limit;
-    const dir = order === 'asc' ? 1 : -1;
 
-    // Validate uploadId if provided
-    let uploadObjId: Types.ObjectId | null = null;
-    if (uploadId) {
-      if (!Types.ObjectId.isValid(uploadId)) {
-        throw new BadRequestException('Invalid uploadId format.');
-      }
-      uploadObjId = new Types.ObjectId(uploadId);
+    // 1) Get the reference upload
+    const ref = await this.uploadModel
+      .findById(uploadObjId)
+      .select(
+        'level levelPercentage user gender ageType isAllowForVote createdAt',
+      );
+
+    if (!ref) {
+      throw new NotFoundException('Reference upload not found.');
     }
 
-    const userLevels: number[] = await this.uploadModel.distinct(
-      'levelPercentage',
-      {
-        user: userObjId,
-        level: { $ne: null },
-      },
-    );
-
-    if (!userLevels.length) {
+    // 2) Decide the matching dimension
+    const matchByLevelPercentage = typeof ref.levelPercentage === 'number';
+    if (!matchByLevelPercentage && typeof ref.level !== 'number') {
+      // nothing to match against
       return {
         page,
         limit,
         total: 0,
         totalPages: 0,
-        levels: [],
         uploads: [],
       };
     }
 
-    const filter: any = { level: { $in: userLevels } };
-    filter.user = { $ne: userObjId };
-    if (!includeSelf) filter.user = { $ne: userObjId };
+    const baseLevel = Math.floor(ref.levelPercentage);
+    const rangeStart = baseLevel;
+    const rangeEnd = baseLevel + 1;
 
-    // Add uploadId filter if provided
-    if (uploadObjId) {
-      filter._id = uploadObjId;
-    }
+    // 4) Count and fetch
+    const total = await this.uploadModel.countDocuments({
+      id: { $ne: uploadId },
+      user: { $ne: ref.user },
+      levelPercentage: {
+        $gte: rangeStart,
+        $lt: rangeEnd,
+      },
+    });
 
-    const total = await this.uploadModel.countDocuments(filter);
-
-    const sortSpec: Record<string, 1 | -1> = {};
-    if (sort === 'level') sortSpec.level = dir;
-    if (sort === 'createdAt') sortSpec.createdAt = dir;
-    if (!sortSpec.createdAt) sortSpec.createdAt = -1;
+    // Always deterministic secondary sort
 
     const uploads = await this.uploadModel
-      .find(filter)
-      .sort(sortSpec)
+      .find({
+        id: { $ne: uploadId },
+        user: { $ne: ref.user },
+        levelPercentage: {
+          $gte: rangeStart,
+          $lt: rangeEnd,
+        },
+      })
       .skip(skip)
       .limit(limit);
 
@@ -596,10 +598,178 @@ export class UploadService {
       limit,
       total,
       totalPages: Math.ceil(total / limit),
-      levels: userLevels,
       uploads,
     };
   }
+
+  // async getUploadsByUserLevels(
+  //   params: GetUploadsByUserLevelsDto,
+  //   userId: string,
+  //   uploadId?: string,
+  // ) {
+  //   const {
+  //     page = 1,
+  //     limit = 20,
+  //     includeSelf = true,
+  //     sort = 'levelPercentage',
+  //     order = 'desc',
+  //   } = params;
+
+  //   const userObjId = new Types.ObjectId(userId);
+  //   const skip = (page - 1) * limit;
+  //   const dir = order === 'asc' ? 1 : -1;
+
+  //   // Validate uploadId if provided
+  //   let uploadObjId: Types.ObjectId | null = null;
+  //   if (uploadId) {
+  //     if (!Types.ObjectId.isValid(uploadId)) {
+  //       throw new BadRequestException('Invalid uploadId format.');
+  //     }
+  //     uploadObjId = new Types.ObjectId(uploadId);
+  //   }
+
+  //   const userLevels: number[] = await this.uploadModel.distinct(
+  //     'levelPercentage',
+  //     {
+  //       user: userObjId,
+  //       level: { $ne: null },
+  //     },
+  //   );
+
+  //   if (!userLevels.length) {
+  //     return {
+  //       page,
+  //       limit,
+  //       total: 0,
+  //       totalPages: 0,
+  //       levels: [],
+  //       uploads: [],
+  //     };
+  //   }
+
+  //   const filter: any = { level: { $in: userLevels } };
+  //   filter.user = { $ne: userObjId };
+  //   if (!includeSelf) filter.user = { $ne: userObjId };
+
+  //   // Add uploadId filter if provided
+  //   if (uploadObjId) {
+  //     filter._id = uploadObjId;
+  //   }
+
+  //   const total = await this.uploadModel.countDocuments(filter);
+
+  //   const sortSpec: Record<string, 1 | -1> = {};
+  //   if (sort === 'level') sortSpec.level = dir;
+  //   if (sort === 'createdAt') sortSpec.createdAt = dir;
+  //   if (!sortSpec.createdAt) sortSpec.createdAt = -1;
+
+  //   const uploads = await this.uploadModel
+  //     .find(filter)
+  //     .sort(sortSpec)
+  //     .skip(skip)
+  //     .limit(limit);
+
+  //   return {
+  //     page,
+  //     limit,
+  //     total,
+  //     totalPages: Math.ceil(total / limit),
+  //     levels: userLevels,
+  //     uploads,
+  //   };
+  // }
+
+  // async getUploadsByUserLevels(
+  //   params: GetUploadsByUserLevelsDto,
+  //   userId: string,
+  //   uploadId?: string,
+  // ) {
+  //   const {
+  //     page = 1,
+  //     limit = 20,
+  //     includeSelf = true,
+  //     sort = 'levelPercentage', // default sort by levelPercentage
+  //     order = 'desc',
+  //   } = params;
+
+  //   // Validate userId
+  //   if (!Types.ObjectId.isValid(userId)) {
+  //     throw new BadRequestException('Invalid userId format.');
+  //   }
+  //   const userObjId = new Types.ObjectId(userId);
+
+  //   // Validate uploadId if provided
+  //   let uploadObjId: Types.ObjectId | null = null;
+  //   if (uploadId) {
+  //     if (!Types.ObjectId.isValid(uploadId)) {
+  //       throw new BadRequestException('Invalid uploadId format.');
+  //     }
+  //     uploadObjId = new Types.ObjectId(uploadId);
+  //   }
+
+  //   const skip = (page - 1) * limit;
+  //   const dir: 1 | -1 = order === 'asc' ? 1 : -1;
+
+  //   // Get the user's distinct levelPercentage values (exclude nulls)
+  //   const userLevelPercentages: number[] = await this.uploadModel.distinct(
+  //     'levelPercentage',
+  //     {
+  //       user: userObjId,
+  //       levelPercentage: { $ne: null },
+  //     },
+  //   );
+
+  //   if (!userLevelPercentages.length) {
+  //     return {
+  //       page,
+  //       limit,
+  //       total: 0,
+  //       totalPages: 0,
+  //       levels: [],
+  //       uploads: [],
+  //     };
+  //   }
+
+  //   // Build filter to fetch uploads that match those levelPercentage values
+  //   const filter: any = {
+  //     levelPercentage: { $in: userLevelPercentages },
+  //   };
+
+  //   // Include or exclude the current user's uploads
+  //   if (!includeSelf) {
+  //     filter.user = { $ne: userObjId };
+  //   }
+
+  //   // Narrow to a specific upload if requested
+  //   if (uploadObjId) {
+  //     filter._id = uploadObjId;
+  //   }
+
+  //   const total = await this.uploadModel.countDocuments(filter);
+
+  //   // Sorting: allow levelPercentage or createdAt; provide deterministic secondary sort
+  //   const sortSpec: Record<string, 1 | -1> = {};
+  //   if (sort === 'levelPercentage') sortSpec.levelPercentage = dir;
+  //   else if (sort === 'createdAt') sortSpec.createdAt = dir;
+
+  //   // Always apply a stable secondary sort on createdAt desc if not already present
+  //   if (!('createdAt' in sortSpec)) sortSpec.createdAt = -1;
+
+  //   const uploads = await this.uploadModel
+  //     .find(filter)
+  //     .sort(sortSpec)
+  //     .skip(skip)
+  //     .limit(limit);
+
+  //   return {
+  //     page,
+  //     limit,
+  //     total,
+  //     totalPages: Math.ceil(total / limit),
+  //     levels: userLevelPercentages,
+  //     uploads,
+  //   };
+  // }
 
   async migrateUploadLevels() {
     const cursor = await this.uploadModel
